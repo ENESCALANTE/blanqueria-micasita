@@ -47,8 +47,8 @@ export default function App() {
     imagen_url: ''
   });
 
-  const WHATSAPP_NUMBER = "5493462463774";
-  const GUIA_CLIC_URL = "https://guiaclic.com.ar/aviso/548";
+  const WHATSAPP_NUMBER = "5493462693014";
+  const GUIA_CLIC_URL = "https://guiaclic.com.ar/aviso/21";
 
   useEffect(() => {
     fetchProductos();
