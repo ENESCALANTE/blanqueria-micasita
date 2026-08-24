@@ -719,7 +719,7 @@ export default function App() {
             <div className="space-y-12">
               <section className="relative rounded-3xl overflow-hidden shadow-2xl bg-slate-950 min-h-[340px] sm:min-h-[420px] flex items-center p-6 sm:p-12 text-white">
                 <img
-                  src={productos[0]?.imagen_url || "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?q=80&w=1200&auto=format&fit=crop"}
+                  src={productos[0]?.imagen_url || "https://res.cloudinary.com/okej62yk/image/upload/v1787538636/spacejoy-nEtpvJjnPVo-unsplash.jpg"}
                   alt="Colección Blanquería"
                   className="absolute inset-0 w-full h-full object-cover opacity-50"
                 />
@@ -730,10 +730,10 @@ export default function App() {
                     Nueva Colección
                   </span>
                   <h2 className="text-3xl sm:text-5xl font-extrabold uppercase tracking-tight leading-none text-white drop-shadow">
-                    Vestimós tu hogar con elegancia
+                    Vestimos tu hogar de comodidad.
                   </h2>
                   <p className="text-slate-200 text-xs sm:text-sm font-medium leading-relaxed">
-                    Aprovechá nuestras ofertas exclusivas en juegos de sábanas, manteles, cortinas y acolchados con envío rápido.
+                    Aprovechá nuestras ofertas exclusivas en juegos de sábanas, manteles, cortinas y acolchados. Dormí rico, viví mejor.
                   </p>
                   <div className="pt-2">
                     <button
