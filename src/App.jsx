@@ -327,7 +327,7 @@ export default function App() {
     const prod = productos.find(
       (p) => (p.categoria || '').trim().toLowerCase() === cat.trim().toLowerCase() && p.imagen_url
     );
-    return prod?.imagen_url || 'https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?q=80&w=800&auto=format&fit=crop';
+    return prod?.imagen_url || 'https://res.cloudinary.com/okej62yk/image/upload/v1787538636/spacejoy-nEtpvJjnPVo-unsplash.jpg';
   };
 
   const productosFiltrados = productos.filter((p) => {
@@ -736,10 +736,10 @@ export default function App() {
                     Nueva Colección
                   </span>
                   <h2 className="text-3xl sm:text-5xl font-extrabold uppercase tracking-tight leading-none text-white drop-shadow">
-                    Vestimós tu hogar con elegancia
+                    Vestimos tu hogar de comodidad.
                   </h2>
                   <p className="text-slate-200 text-xs sm:text-sm font-medium leading-relaxed">
-                    Aprovechá nuestras ofertas exclusivas en juegos de sábanas, manteles, cortinas y acolchados con envío rápido.
+                    Aprovechá nuestras ofertas exclusivas en juegos de sábanas, manteles, cortinas y acolchados. Dormí rico, viví mejor.
                   </p>
                   <div className="pt-2">
                     <button
