@@ -241,12 +241,23 @@ export default function App() {
     window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
+  // Evita que se creen variantes de mayúsculas/minúsculas de una misma categoría:
+  // si ya existe (comparando sin importar mayúsculas), reutiliza la capitalización
+  // ya guardada en la base; si es nueva, la deja con la primera letra en mayúscula.
+  const normalizarCategoria = (valorIngresado) => {
+    const limpio = (valorIngresado || '').trim();
+    if (!limpio) return '';
+    const existente = categorias.find((c) => c.toLowerCase() === limpio.toLowerCase());
+    if (existente) return existente;
+    return limpio.charAt(0).toUpperCase() + limpio.slice(1);
+  };
+
   const guardarProducto = async (e) => {
     e.preventDefault();
     try {
       const payload = {
         titulo: formProd.titulo,
-        categoria: formProd.categoria.trim().toLowerCase(),
+        categoria: normalizarCategoria(formProd.categoria),
         precio: Number(formProd.precio) || 0,
         precio_oferta: formProd.precio_oferta ? Number(formProd.precio_oferta) : null,
         imagen_url: formProd.imagen_url
@@ -296,17 +307,29 @@ export default function App() {
     }
   };
 
-  const categorias = [...new Set(productos.map((p) => p?.categoria).filter(Boolean))];
+  // Se normaliza (trim + minúsculas) para agrupar como "la misma categoría" sin importar
+  // cómo haya quedado guardada mayúscula/minúscula en cada producto, evitando así que
+  // aparezcan etiquetas duplicadas (ej: "Sábanas" y "sábanas") al editar publicaciones.
+  const categorias = [...new Map(
+    productos
+      .map((p) => (p?.categoria || '').trim())
+      .filter(Boolean)
+      .map((cat) => [cat.toLowerCase(), cat])
+  ).values()];
 
   const obtenerImagenCategoria = (cat) => {
-    const prod = productos.find((p) => p.categoria === cat && p.imagen_url);
+    const prod = productos.find(
+      (p) => (p.categoria || '').trim().toLowerCase() === cat.trim().toLowerCase() && p.imagen_url
+    );
     return prod?.imagen_url || 'https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?q=80&w=800&auto=format&fit=crop';
   };
 
   const productosFiltrados = productos.filter((p) => {
     const titulo = (p?.titulo || '').toLowerCase();
     const query = busqueda.toLowerCase();
-    const coincideCategoria = !categoriaSeleccionada || p?.categoria === categoriaSeleccionada;
+    const coincideCategoria =
+      !categoriaSeleccionada ||
+      (p?.categoria || '').trim().toLowerCase() === categoriaSeleccionada.trim().toLowerCase();
     const coincideBusqueda = titulo.includes(query);
     const coincideOferta = !soloOfertas || (p?.precio_oferta && Number(p.precio_oferta) > 0);
     return coincideCategoria && coincideBusqueda && coincideOferta;
