@@ -227,6 +227,12 @@ export default function App() {
     );
   };
 
+  const vaciarCarrito = () => {
+    if (carrito.length === 0) return;
+    if (!confirm('¿Vaciar todo el carrito?')) return;
+    setCarrito([]);
+  };
+
   const totalCarrito = carrito.reduce((sum, item) => sum + item.precioEfectivo * item.cantidad, 0);
   const totalItems = carrito.reduce((sum, item) => sum + item.cantidad, 0);
 
@@ -719,7 +725,7 @@ export default function App() {
             <div className="space-y-12">
               <section className="relative rounded-3xl overflow-hidden shadow-2xl bg-slate-950 min-h-[340px] sm:min-h-[420px] flex items-center p-6 sm:p-12 text-white">
                 <img
-                  src={productos[0]?.imagen_url || "https://res.cloudinary.com/okej62yk/image/upload/v1787538636/spacejoy-nEtpvJjnPVo-unsplash.jpg"}
+                  src={productos[0]?.imagen_url || "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?q=80&w=1200&auto=format&fit=crop"}
                   alt="Colección Blanquería"
                   className="absolute inset-0 w-full h-full object-cover opacity-50"
                 />
@@ -730,10 +736,10 @@ export default function App() {
                     Nueva Colección
                   </span>
                   <h2 className="text-3xl sm:text-5xl font-extrabold uppercase tracking-tight leading-none text-white drop-shadow">
-                    Vestimos tu hogar de comodidad.
+                    Vestimós tu hogar con elegancia
                   </h2>
                   <p className="text-slate-200 text-xs sm:text-sm font-medium leading-relaxed">
-                    Aprovechá nuestras ofertas exclusivas en juegos de sábanas, manteles, cortinas y acolchados. Dormí rico, viví mejor.
+                    Aprovechá nuestras ofertas exclusivas en juegos de sábanas, manteles, cortinas y acolchados con envío rápido.
                   </p>
                   <div className="pt-2">
                     <button
@@ -851,9 +857,20 @@ export default function App() {
           <div className="w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
             <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
               <h2 className="font-extrabold text-sm uppercase tracking-wider text-slate-900">Tu Carrito ({totalItems})</h2>
-              <button onClick={() => setCarritoAbierto(false)} className="p-1 text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                {carrito.length > 0 && (
+                  <button
+                    onClick={vaciarCarrito}
+                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg uppercase tracking-wide"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Vaciar
+                  </button>
+                )}
+                <button onClick={() => setCarritoAbierto(false)} className="p-1 text-slate-400 hover:text-slate-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
