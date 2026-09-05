@@ -36,9 +36,11 @@ export default function App() {
   });
   const [subiendoLogo, setSubiendoLogo] = useState(false);
 
-  // Carrito
+  // Carrito y Notificación Toast
   const [carrito, setCarrito] = useState([]);
   const [carritoAbierto, setCarritoAbierto] = useState(false);
+  const [toastMensaje, setToastMensaje] = useState('');
+  const [animarCarrito, setAnimarCarrito] = useState(false);
 
   // Modo Admin (Supabase Auth)
   const [esAdmin, setEsAdmin] = useState(false);
@@ -87,6 +89,13 @@ export default function App() {
       authListener?.subscription?.unsubscribe();
     };
   }, []);
+
+  const mostrarToast = (mensaje) => {
+    setToastMensaje(mensaje);
+    setAnimarCarrito(true);
+    setTimeout(() => setAnimarCarrito(false), 600);
+    setTimeout(() => setToastMensaje(''), 3000);
+  };
 
   async function verificarSesion() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -177,7 +186,7 @@ export default function App() {
       }
     } catch (error) {
       alert('Error al subir la imagen: ' + error.message);
-    } fontal {
+    } finally {
       if (esLogo) setSubiendoLogo(false);
       else if (esVarianteIndex !== null) setSubiendoImagenVarIdx(null);
       else setSubiendoImagen(false);
@@ -338,8 +347,13 @@ export default function App() {
       (productoDetalle.imagenes && productoDetalle.imagenes[0]) || 
       productoDetalle.imagen_url || '';
 
+    // Generación de ID único compuesto estricto (ID Producto + ID Variante o Atributos)
+    const varianteKey = varianteActual?.id 
+      ? varianteActual.id 
+      : `${medidaSel || 'nomedida'}-${materialSel || 'nomat'}-${colorSel || 'nocolor'}`;
+
     const itemCarrito = {
-      id: `${productoDetalle.id}-${varianteActual?.id || 'base'}`,
+      id: `${productoDetalle.id}_${varianteKey}`,
       producto_id: productoDetalle.id,
       variante_id: varianteActual?.id || null,
       titulo: productoDetalle.titulo,
@@ -362,7 +376,7 @@ export default function App() {
     });
 
     setProductoDetalle(null);
-    setCarritoAbierto(true);
+    mostrarToast(`¡"${productoDetalle.titulo}" agregado al carrito!`);
   };
 
   const modificarCantidad = (id, delta) => {
@@ -596,7 +610,9 @@ export default function App() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setCarritoAbierto(true)}
-                className="relative p-2.5 bg-emerald-800 hover:bg-emerald-700 text-white rounded-full transition-colors flex items-center gap-2 px-4 shadow"
+                className={`relative p-2.5 bg-emerald-800 hover:bg-emerald-700 text-white rounded-full transition-all duration-300 flex items-center gap-2 px-4 shadow ${
+                  animarCarrito ? 'scale-110 bg-emerald-600 ring-4 ring-emerald-300' : ''
+                }`}
               >
                 <ShoppingCart className="w-5 h-5" />
                 <span className="text-xs font-bold hidden sm:inline uppercase tracking-wider">Carrito</span>
@@ -1447,6 +1463,14 @@ export default function App() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* NOTIFICACIÓN TOAST FLOTANTE */}
+      {toastMensaje && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white text-xs font-bold px-5 py-3 rounded-2xl shadow-2xl backdrop-blur-md border border-slate-700 flex items-center gap-2 animate-bounce">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{toastMensaje}</span>
         </div>
       )}
 
