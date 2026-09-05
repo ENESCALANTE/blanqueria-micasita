@@ -54,6 +54,7 @@ export default function App() {
   // Modal Detalle de Producto estilo Tiendanube
   const [productoDetalle, setProductoDetalle] = useState(null);
   const [imagenActivaIndex, setImagenActivaIndex] = useState(0);
+  const [imagenVarianteDirecta, setImagenVarianteDirecta] = useState(null);
   const [lightboxAbierto, setLightboxAbierto] = useState(false);
   const [imagenHoverZoom, setImagenHoverZoom] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
