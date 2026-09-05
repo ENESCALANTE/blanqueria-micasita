@@ -139,37 +139,65 @@ export default function App() {
   // solo mientras el modal de detalle de producto está abierto.
   const touchStartXRef = useRef(null);
 
-  // Referencias para poder "arrastrar" la foto cuando está ampliada en el
-  // lightbox (celular). Van con addEventListener nativo y passive:false
-  // porque React marca touchmove como pasivo por defecto, y necesitamos
-  // preventDefault para que la página no haga scroll mientras se arrastra.
+  // Referencias y estado para el gesto táctil dentro del lightbox (celular):
+  // - Si la foto NO está ampliada: deslizar hacia los costados pasa a la
+  //   foto siguiente/anterior (como MercadoLibre); un toque simple amplía.
+  // - Si la foto SÍ está ampliada: arrastrar el dedo la recorre, moviéndola
+  //   en el mismo sentido en que se arrastra (como al mirar una foto en el
+  //   celular, no al revés como con un mouse); un toque simple (sin
+  //   arrastre) la vuelve a tamaño normal.
+  // Van con addEventListener nativo y passive:false porque React marca
+  // touchmove como pasivo por defecto, y necesitamos preventDefault para
+  // que la página no haga scroll mientras se desliza o se arrastra.
   const lightboxImgRef = useRef(null);
-  const arrastreZoomRef = useRef({ inicio: null, arrastro: false });
+  const arrastreZoomRef = useRef({ inicio: null, panInicial: { x: 0, y: 0 }, arrastro: false, esHorizontal: null });
+  const [panZoom, setPanZoom] = useState({ x: 0, y: 0 });
+  const panZoomRef = useRef(panZoom);
+  useEffect(() => { panZoomRef.current = panZoom; }, [panZoom]);
 
   useEffect(() => {
-    if (!lightboxAbierto || !imagenHoverZoom) return;
+    if (!lightboxAbierto) return;
     const el = lightboxImgRef.current;
     if (!el || tieneMousePreciso()) return; // en desktop el zoom ya sigue al mouse solo
 
     const handleTouchStart = (e) => {
       const t = e.touches[0];
-      arrastreZoomRef.current = { inicio: { x: t.clientX, y: t.clientY }, arrastro: false };
+      arrastreZoomRef.current = {
+        inicio: { x: t.clientX, y: t.clientY },
+        panInicial: { ...panZoomRef.current },
+        arrastro: false,
+        esHorizontal: null,
+      };
     };
 
     const handleTouchMove = (e) => {
       const estado = arrastreZoomRef.current;
+      if (!estado.inicio) return;
       const t = e.touches[0];
-      if (estado.inicio) {
-        const dx = Math.abs(t.clientX - estado.inicio.x);
-        const dy = Math.abs(t.clientY - estado.inicio.y);
-        if (dx > 6 || dy > 6) estado.arrastro = true;
+      const dx = t.clientX - estado.inicio.x;
+      const dy = t.clientY - estado.inicio.y;
+
+      if (estado.esHorizontal === null && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+        estado.esHorizontal = Math.abs(dx) > Math.abs(dy);
       }
-      if (estado.arrastro) {
+
+      if (imagenHoverZoom) {
+        // Foto ampliada: arrastrar la recorre siguiendo el dedo.
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) estado.arrastro = true;
+        if (estado.arrastro) {
+          e.preventDefault();
+          const rect = el.getBoundingClientRect();
+          const limiteX = rect.width * 0.65;
+          const limiteY = rect.height * 0.65;
+          const nuevoX = Math.min(limiteX, Math.max(-limiteX, estado.panInicial.x + dx));
+          const nuevoY = Math.min(limiteY, Math.max(-limiteY, estado.panInicial.y + dy));
+          setPanZoom({ x: nuevoX, y: nuevoY });
+        }
+      } else if (estado.esHorizontal) {
+        // Foto en tamaño normal: es un deslizamiento lateral para cambiar
+        // de foto, evitamos que la página/el modal se muevan mientras tanto.
+        if (Math.abs(dx) > 4) estado.arrastro = true;
         e.preventDefault();
-        const rect = el.getBoundingClientRect();
-        const x = Math.min(100, Math.max(0, ((t.clientX - rect.left) / rect.width) * 100));
-        const y = Math.min(100, Math.max(0, ((t.clientY - rect.top) / rect.height) * 100));
-        setZoomPos({ x, y });
       }
     };
 
@@ -184,9 +212,7 @@ export default function App() {
   useEffect(() => {
     if (!productoDetalle) return;
 
-    const imgs = (productoDetalle.imagenes && productoDetalle.imagenes.length > 0)
-      ? productoDetalle.imagenes
-      : (productoDetalle.imagen_url ? [productoDetalle.imagen_url] : []);
+    const imgs = construirGaleria(productoDetalle).map((g) => g.url);
 
     if (imgs.length <= 1) return;
 
@@ -1374,12 +1400,14 @@ export default function App() {
           if (listaImagenes.length <= 1) return;
           setImagenVarianteDirecta(null);
           setImagenHoverZoom(false);
+          setPanZoom({ x: 0, y: 0 });
           setImagenActivaIndex((prev) => (prev + 1) % listaImagenes.length);
         };
         const irImagenAnterior = () => {
           if (listaImagenes.length <= 1) return;
           setImagenVarianteDirecta(null);
           setImagenHoverZoom(false);
+          setPanZoom({ x: 0, y: 0 });
           setImagenActivaIndex((prev) => (prev - 1 + listaImagenes.length) % listaImagenes.length);
         };
 
@@ -1406,34 +1434,63 @@ export default function App() {
           setZoomPos({ x, y });
         };
 
-        // En celular: un toque sobre la foto amplía centrada en ese punto.
-        // Con la foto ya ampliada, arrastrar el dedo la recorre (ver el
-        // useEffect de arriba, que escucha touchmove nativo). Un toque
-        // simple (sin arrastre) sobre la foto ampliada la vuelve a su
-        // tamaño normal.
-        const manejarToqueZoom = (e) => {
+        // Al soltar el dedo en el visor ampliado, según cómo venía el gesto
+        // (detectado en el useEffect de arriba, que escucha touchmove
+        // nativo):
+        // - Si la foto está ampliada y NO hubo arrastre: fue un toque
+        //   simple, la vuelve a tamaño normal.
+        // - Si la foto está en tamaño normal y el gesto fue horizontal y
+        //   superó el umbral: pasa a la foto siguiente/anterior.
+        // - Si no hubo arrastre: fue un toque simple, amplía centrada en
+        //   ese punto.
+        const manejarFinDeToqueLightbox = (e) => {
           if (tieneMousePreciso()) return;
-          const fueArrastre = arrastreZoomRef.current.arrastro;
-          arrastreZoomRef.current = { inicio: null, arrastro: false };
-          if (fueArrastre) return; // se estaba recorriendo la foto, no achicar
-          e.preventDefault();
-          e.stopPropagation();
+          const estado = arrastreZoomRef.current;
+          const fueArrastre = estado.arrastro;
+          const fueHorizontal = estado.esHorizontal;
+          const inicio = estado.inicio;
+          arrastreZoomRef.current = { inicio: null, panInicial: { x: 0, y: 0 }, arrastro: false, esHorizontal: null };
+
           if (imagenHoverZoom) {
-            setImagenHoverZoom(false);
+            if (!fueArrastre) {
+              e.preventDefault();
+              e.stopPropagation();
+              setImagenHoverZoom(false);
+              setPanZoom({ x: 0, y: 0 });
+            }
             return;
           }
-          const touch = e.changedTouches[0];
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = ((touch.clientX - rect.left) / rect.width) * 100;
-          const y = ((touch.clientY - rect.top) / rect.height) * 100;
-          setZoomPos({ x, y });
-          setImagenHoverZoom(true);
+
+          if (fueHorizontal && inicio) {
+            const touch = e.changedTouches[0];
+            const dx = touch.clientX - inicio.x;
+            if (Math.abs(dx) > 40) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (dx < 0) irImagenSiguiente();
+              else irImagenAnterior();
+              return;
+            }
+          }
+
+          if (!fueArrastre) {
+            e.preventDefault();
+            e.stopPropagation();
+            const touch = e.changedTouches[0];
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = ((touch.clientX - rect.left) / rect.width) * 100;
+            const y = ((touch.clientY - rect.top) / rect.height) * 100;
+            setZoomPos({ x, y });
+            setPanZoom({ x: 0, y: 0 });
+            setImagenHoverZoom(true);
+          }
         };
 
         const cerrarDetalle = () => {
           setProductoDetalle(null);
           setLightboxAbierto(false);
           setImagenHoverZoom(false);
+          setPanZoom({ x: 0, y: 0 });
         };
 
 
@@ -1462,7 +1519,7 @@ export default function App() {
                     if (touchStartXRef.current === null) return;
                     const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
                     touchStartXRef.current = null;
-                    if (Math.abs(deltaX) < 40) return; // fue un toque (tap), no un swipe: dejamos que abra el zoom grande
+                    if (Math.abs(deltaX) < 25) return; // fue un toque (tap), no un swipe: dejamos que abra el zoom grande
                     e.preventDefault(); // fue un swipe: no dejamos que además dispare el click de abajo
                     if (deltaX < 0) irImagenSiguiente();
                     else irImagenAnterior();
@@ -1654,10 +1711,10 @@ export default function App() {
           {lightboxAbierto && imagenAMostrar && (
             <div
               className="fixed inset-0 z-[60] bg-slate-950/95 flex items-center justify-center p-4"
-              onClick={() => { setLightboxAbierto(false); setImagenHoverZoom(false); }}
+              onClick={() => { setLightboxAbierto(false); setImagenHoverZoom(false); setPanZoom({ x: 0, y: 0 }); }}
             >
               <button
-                onClick={(e) => { e.stopPropagation(); setLightboxAbierto(false); setImagenHoverZoom(false); }}
+                onClick={(e) => { e.stopPropagation(); setLightboxAbierto(false); setImagenHoverZoom(false); setPanZoom({ x: 0, y: 0 }); }}
                 aria-label="Cerrar"
                 className="absolute top-4 right-4 z-20 bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors"
               >
@@ -1690,20 +1747,22 @@ export default function App() {
                 onMouseEnter={() => { if (tieneMousePreciso()) setImagenHoverZoom(true); }}
                 onMouseLeave={() => setImagenHoverZoom(false)}
                 onMouseMove={(e) => { if (tieneMousePreciso()) manejarMouseMoveZoom(e); }}
-                onTouchEnd={manejarToqueZoom}
+                onTouchEnd={manejarFinDeToqueLightbox}
               >
                 <img
                   src={imagenAMostrar}
                   alt={productoDetalle.titulo}
                   className="max-w-full max-h-full object-contain select-none transition-transform duration-150 ease-out"
-                  style={imagenHoverZoom ? { transform: 'scale(2.2)', transformOrigin: `${zoomPos.x}% ${zoomPos.y}%` } : undefined}
+                  style={imagenHoverZoom ? { transform: `translate(${panZoom.x}px, ${panZoom.y}px) scale(2.2)`, transformOrigin: `${zoomPos.x}% ${zoomPos.y}%` } : undefined}
                   draggable={false}
                 />
               </div>
 
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
                 <span className="sm:hidden text-white/70 text-[11px] font-bold">
-                  {imagenHoverZoom ? 'Arrastrá para recorrer · Tocá para volver' : 'Tocá la foto para ampliar'}
+                  {imagenHoverZoom
+                    ? 'Arrastrá para recorrer · Tocá para volver'
+                    : (listaImagenes.length > 1 ? 'Deslizá para ver más fotos · Tocá para ampliar' : 'Tocá la foto para ampliar')}
                 </span>
                 {listaImagenes.length > 1 && (
                   <span className="text-white/80 text-xs font-bold">
