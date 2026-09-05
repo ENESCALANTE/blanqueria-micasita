@@ -8,6 +8,9 @@ import {
 const CLOUDINARY_CLOUD_NAME = "okej62yk"; 
 const CLOUDINARY_UPLOAD_PRESET = "preset_micasita";
 
+// EMAIL AUTORIZADO PARA ESTA TIENDA
+const EMAIL_AUTORIZADO = "gracielaorsetti@guiaclic.com.ar";
+
 export default function App() {
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,8 +58,13 @@ export default function App() {
     fetchConfigNegocio();
     verificarSesion();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setEsAdmin(!!session);
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user?.email === EMAIL_AUTORIZADO) {
+        setEsAdmin(true);
+      } else {
+        if (session) await supabase.auth.signOut();
+        setEsAdmin(false);
+      }
     });
 
     return () => {
@@ -66,7 +74,12 @@ export default function App() {
 
   async function verificarSesion() {
     const { data: { session } } = await supabase.auth.getSession();
-    setEsAdmin(!!session);
+    if (session?.user?.email === EMAIL_AUTORIZADO) {
+      setEsAdmin(true);
+    } else {
+      if (session) await supabase.auth.signOut();
+      setEsAdmin(false);
+    }
   }
 
   async function fetchProductos() {
@@ -183,6 +196,13 @@ export default function App() {
 
       if (error) throw error;
 
+      // VALIDACIÓN DE SEGURIDAD
+      if (data.user?.email !== EMAIL_AUTORIZADO) {
+        await supabase.auth.signOut();
+        setErrorPassword('Usuario incorrecto.');
+        return;
+      }
+
       setEsAdmin(true);
       setModalAdminAbierto(false);
       setEmailInput('');
@@ -247,9 +267,6 @@ export default function App() {
     window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
-  // Evita que se creen variantes de mayúsculas/minúsculas de una misma categoría:
-  // si ya existe (comparando sin importar mayúsculas), reutiliza la capitalización
-  // ya guardada en la base; si es nueva, la deja con la primera letra en mayúscula.
   const normalizarCategoria = (valorIngresado) => {
     const limpio = (valorIngresado || '').trim();
     if (!limpio) return '';
@@ -285,6 +302,7 @@ export default function App() {
       setFormProd({ titulo: '', categoria: '', precio: '', precio_oferta: '', imagen_url: '' });
       setProductoEditar(null);
       fetchProductos();
+      alert('¡Producto guardado correctamente!');
     } catch (err) {
       alert('Error al guardar el producto: ' + err.message);
     }
@@ -313,9 +331,6 @@ export default function App() {
     }
   };
 
-  // Se normaliza (trim + minúsculas) para agrupar como "la misma categoría" sin importar
-  // cómo haya quedado guardada mayúscula/minúscula en cada producto, evitando así que
-  // aparezcan etiquetas duplicadas (ej: "Sábanas" y "sábanas") al editar publicaciones.
   const categorias = [...new Map(
     productos
       .map((p) => (p?.categoria || '').trim())
