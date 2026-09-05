@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { 
   ShoppingBag, Search, ShoppingCart, X, Plus, Minus, ExternalLink, 
-  MessageCircle, ArrowLeft, Lock, Edit3, Trash2, Tag, Check, Image as ImageIcon, KeyRound, LogOut, Upload, Loader2, Settings, ChevronRight
+  MessageCircle, ArrowLeft, Lock, Edit3, Trash2, Tag, Check, Image as ImageIcon, KeyRound, LogOut, Upload, Loader2, Settings, ChevronRight, ChevronLeft
 } from 'lucide-react';
 
 const CLOUDINARY_CLOUD_NAME = "okej62yk"; 
@@ -89,6 +89,33 @@ export default function App() {
       authListener?.subscription?.unsubscribe();
     };
   }, []);
+
+  // Navegación de la galería de fotos con las flechas del teclado (← →),
+  // solo mientras el modal de detalle de producto está abierto.
+  const touchStartXRef = useRef(null);
+
+  useEffect(() => {
+    if (!productoDetalle) return;
+
+    const imgs = (productoDetalle.imagenes && productoDetalle.imagenes.length > 0)
+      ? productoDetalle.imagenes
+      : (productoDetalle.imagen_url ? [productoDetalle.imagen_url] : []);
+
+    if (imgs.length <= 1) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowRight') {
+        setImagenVarianteDirecta(null);
+        setImagenActivaIndex((prev) => (prev + 1) % imgs.length);
+      } else if (e.key === 'ArrowLeft') {
+        setImagenVarianteDirecta(null);
+        setImagenActivaIndex((prev) => (prev - 1 + imgs.length) % imgs.length);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [productoDetalle]);
 
   const mostrarToast = (mensaje) => {
     setToastMensaje(mensaje);
@@ -299,27 +326,56 @@ export default function App() {
 
   const varianteActual = obtenerVarianteSeleccionada();
 
-  // Actualizar imagen automáticamente al cambiar variantes
+  // Actualizar imagen automáticamente al cambiar variantes.
+  // Los 3 selectores (medida/material/color) NO son independientes: solo existen las
+  // combinaciones que realmente están cargadas como filas en blanqueria_micasita_variantes.
+  // Por eso, al tocar un selector, si la combinación resultante con los otros dos valores
+  // ya elegidos no corresponde a ninguna variante real, reacomodamos esos otros dos para
+  // que siempre queden apuntando a una variante que sí existe (nunca una inventada).
   const handleCambioVariante = (tipo, valor) => {
+    const variantes = productoDetalle?.variantes || [];
+
     let m = medidaSel;
     let mat = materialSel;
     let c = colorSel;
 
-    if (tipo === 'medida') { setMedidaSel(valor); m = valor; }
-    if (tipo === 'material') { setMaterialSel(valor); mat = valor; }
-    if (tipo === 'color') { setColorSel(valor); c = valor; }
+    if (tipo === 'medida') m = valor;
+    if (tipo === 'material') mat = valor;
+    if (tipo === 'color') c = valor;
 
-    const encontrada = (productoDetalle?.variantes || []).find((v) =>
+    // Variantes que cumplen con el valor que se acaba de elegir
+    const candidatas = variantes.filter((v) => {
+      if (tipo === 'medida') return v.medida === valor;
+      if (tipo === 'material') return v.material === valor;
+      return v.color === valor;
+    });
+
+    const combinacionValida = candidatas.some((v) =>
       (m === '' || v.medida === m) &&
       (mat === '' || v.material === mat) &&
       (c === '' || v.color === c)
     );
 
-    if (encontrada && encontrada.imagen_asociada_url) {
-      setImagenVarianteDirecta(encontrada.imagen_asociada_url);
-    } else {
-      setImagenVarianteDirecta(null);
+    // Si con el nuevo valor la combinación actual dejó de existir, saltamos a la
+    // primera variante candidata completa (no solo el campo que cambió) para
+    // garantizar que siempre quede seleccionada una variante real.
+    if (!combinacionValida && candidatas[0]) {
+      m = candidatas[0].medida || '';
+      mat = candidatas[0].material || '';
+      c = candidatas[0].color || '';
     }
+
+    setMedidaSel(m);
+    setMaterialSel(mat);
+    setColorSel(c);
+
+    const encontrada = variantes.find((v) =>
+      (m === '' || v.medida === m) &&
+      (mat === '' || v.material === mat) &&
+      (c === '' || v.color === c)
+    ) || candidatas[0] || null;
+
+    setImagenVarianteDirecta(encontrada?.imagen_asociada_url || null);
   };
 
   // Calcular precio actual según la variante o producto base
@@ -580,6 +636,20 @@ export default function App() {
     const coincideOferta = !soloOfertas || (p?.precio_oferta && Number(p.precio_oferta) > 0);
     return coincideCategoria && coincideBusqueda && coincideOferta;
   });
+
+  // Valores de medida/material/color ya cargados en CUALQUIER producto del catálogo.
+  // Se usan como sugerencias (datalist) al cargar variantes en el panel admin, para que
+  // el comerciante elija lo ya existente en vez de escribirlo de nuevo y arriesgarse a
+  // tipeos distintos para lo mismo (ej. "Algodon" vs "Algodón").
+  const medidasExistentes = [...new Set(
+    productos.flatMap((p) => (p.variantes || []).map((v) => (v.medida || '').trim())).filter(Boolean)
+  )].sort();
+  const materialesExistentes = [...new Set(
+    productos.flatMap((p) => (p.variantes || []).map((v) => (v.material || '').trim())).filter(Boolean)
+  )].sort();
+  const coloresExistentes = [...new Set(
+    productos.flatMap((p) => (p.variantes || []).map((v) => (v.color || '').trim())).filter(Boolean)
+  )].sort();
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col justify-between font-sans antialiased">
@@ -889,12 +959,27 @@ export default function App() {
                   </button>
                 </div>
 
+                {/* Sugerencias de valores ya usados: el input sigue siendo libre (se puede
+                    escribir uno nuevo), pero el navegador ofrece autocompletar con lo ya
+                    cargado en el catálogo, para evitar variantes duplicadas por tipeo
+                    (ej. "Algodon" vs "Algodón"). */}
+                <datalist id="datalist-medidas">
+                  {medidasExistentes.map((m) => <option key={m} value={m} />)}
+                </datalist>
+                <datalist id="datalist-materiales">
+                  {materialesExistentes.map((m) => <option key={m} value={m} />)}
+                </datalist>
+                <datalist id="datalist-colores">
+                  {coloresExistentes.map((c) => <option key={c} value={c} />)}
+                </datalist>
+
                 {formVariantes.map((v, idx) => (
                   <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-3 md:grid-cols-7 gap-3 items-center">
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 block mb-1">Medida/Talle</label>
                       <input
                         type="text"
+                        list="datalist-medidas"
                         placeholder="2 1/2"
                         value={v.medida}
                         onChange={(e) => {
@@ -909,6 +994,7 @@ export default function App() {
                       <label className="text-[10px] font-bold text-slate-500 block mb-1">Material</label>
                       <input
                         type="text"
+                        list="datalist-materiales"
                         placeholder="Algodon"
                         value={v.material}
                         onChange={(e) => {
@@ -923,6 +1009,7 @@ export default function App() {
                       <label className="text-[10px] font-bold text-slate-500 block mb-1">Color</label>
                       <input
                         type="text"
+                        list="datalist-colores"
                         placeholder="Blanco"
                         value={v.color}
                         onChange={(e) => {
@@ -1192,6 +1279,17 @@ export default function App() {
 
         const imagenAMostrar = imagenVarianteDirecta || listaImagenes[imagenActivaIndex] || listaImagenes[0];
 
+        const irImagenSiguiente = () => {
+          if (listaImagenes.length <= 1) return;
+          setImagenVarianteDirecta(null);
+          setImagenActivaIndex((prev) => (prev + 1) % listaImagenes.length);
+        };
+        const irImagenAnterior = () => {
+          if (listaImagenes.length <= 1) return;
+          setImagenVarianteDirecta(null);
+          setImagenActivaIndex((prev) => (prev - 1 + listaImagenes.length) % listaImagenes.length);
+        };
+
         const variantes = productoDetalle.variantes || [];
         const medidasDisponibles = [...new Set(variantes.map(v => v.medida).filter(Boolean))];
         const materialesDisponibles = [...new Set(variantes.map(v => v.material).filter(Boolean))];
@@ -1209,15 +1307,49 @@ export default function App() {
 
               {/* GALERÍA DE FOTOS */}
               <div className="w-full md:w-1/2 p-6 bg-slate-50 flex flex-col items-center justify-between border-b md:border-b-0 md:border-r border-slate-200">
-                <div className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden bg-white shadow-inner relative flex items-center justify-center">
+                <div
+                  className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden bg-white shadow-inner relative flex items-center justify-center group touch-pan-y"
+                  onTouchStart={(e) => { touchStartXRef.current = e.touches[0].clientX; }}
+                  onTouchEnd={(e) => {
+                    if (touchStartXRef.current === null) return;
+                    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+                    touchStartXRef.current = null;
+                    if (Math.abs(deltaX) < 40) return; // umbral mínimo para considerarlo swipe
+                    if (deltaX < 0) irImagenSiguiente();
+                    else irImagenAnterior();
+                  }}
+                >
                   {imagenAMostrar ? (
                     <img 
                       src={imagenAMostrar} 
                       alt={productoDetalle.titulo} 
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-contain select-none"
+                      draggable={false}
                     />
                   ) : (
                     <ImageIcon className="w-12 h-12 text-slate-300" />
+                  )}
+
+                  {/* FLECHAS LATERALES DE NAVEGACIÓN (estilo Tiendanube/MercadoLibre) */}
+                  {listaImagenes.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={irImagenAnterior}
+                        aria-label="Foto anterior"
+                        className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-700 rounded-full p-2 shadow-md transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={irImagenSiguiente}
+                        aria-label="Foto siguiente"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-700 rounded-full p-2 shadow-md transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </>
                   )}
                 </div>
 
