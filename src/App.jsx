@@ -212,17 +212,33 @@ export default function App() {
   useEffect(() => {
     if (!productoDetalle) return;
 
-    const imgs = construirGaleria(productoDetalle).map((g) => g.url);
+    const galeria = construirGaleria(productoDetalle);
 
-    if (imgs.length <= 1) return;
+    if (galeria.length <= 1) return;
+
+    // Al pasar de foto con el teclado, si esa foto pertenece a una variante
+    // puntual, sincronizamos medida/material/color con esa variante — igual
+    // que al elegir la miniatura con el mouse — para que el usuario sepa
+    // en qué variante está parado.
+    const irAIndice = (calcularNuevoIndice) => {
+      setImagenVarianteDirecta(null);
+      setImagenActivaIndex((prev) => {
+        const nuevoIndex = calcularNuevoIndice(prev, galeria.length);
+        const item = galeria[nuevoIndex];
+        if (item?.variante) {
+          setMedidaSel(item.variante.medida || '');
+          setMaterialSel(item.variante.material || '');
+          setColorSel(item.variante.color || '');
+        }
+        return nuevoIndex;
+      });
+    };
 
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowRight') {
-        setImagenVarianteDirecta(null);
-        setImagenActivaIndex((prev) => (prev + 1) % imgs.length);
+        irAIndice((prev, total) => (prev + 1) % total);
       } else if (e.key === 'ArrowLeft') {
-        setImagenVarianteDirecta(null);
-        setImagenActivaIndex((prev) => (prev - 1 + imgs.length) % imgs.length);
+        irAIndice((prev, total) => (prev - 1 + total) % total);
       }
     };
 
@@ -1401,14 +1417,32 @@ export default function App() {
           setImagenVarianteDirecta(null);
           setImagenHoverZoom(false);
           setPanZoom({ x: 0, y: 0 });
-          setImagenActivaIndex((prev) => (prev + 1) % listaImagenes.length);
+          setImagenActivaIndex((prev) => {
+            const nuevoIndex = (prev + 1) % listaImagenes.length;
+            const item = galeriaCompleta[nuevoIndex];
+            if (item?.variante) {
+              setMedidaSel(item.variante.medida || '');
+              setMaterialSel(item.variante.material || '');
+              setColorSel(item.variante.color || '');
+            }
+            return nuevoIndex;
+          });
         };
         const irImagenAnterior = () => {
           if (listaImagenes.length <= 1) return;
           setImagenVarianteDirecta(null);
           setImagenHoverZoom(false);
           setPanZoom({ x: 0, y: 0 });
-          setImagenActivaIndex((prev) => (prev - 1 + listaImagenes.length) % listaImagenes.length);
+          setImagenActivaIndex((prev) => {
+            const nuevoIndex = (prev - 1 + listaImagenes.length) % listaImagenes.length;
+            const item = galeriaCompleta[nuevoIndex];
+            if (item?.variante) {
+              setMedidaSel(item.variante.medida || '');
+              setMaterialSel(item.variante.material || '');
+              setColorSel(item.variante.color || '');
+            }
+            return nuevoIndex;
+          });
         };
 
         // Al elegir una miniatura, si esa foto pertenece a una variante puntual,
