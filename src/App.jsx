@@ -44,6 +44,15 @@ function construirGaleria(prod) {
   return galeria;
 }
 
+// El zoom que "sigue" al cursor solo tiene sentido con mouse real. En
+// celular el mouse se emula al tocar, así que ahí usamos en cambio un
+// zoom de "tocar para ampliar" + arrastrar para recorrer la foto.
+function tieneMousePreciso() {
+  return typeof window !== 'undefined' &&
+    window.matchMedia &&
+    window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+}
+
 export default function App() {
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -129,6 +138,48 @@ export default function App() {
   // Navegación de la galería de fotos con las flechas del teclado (← →),
   // solo mientras el modal de detalle de producto está abierto.
   const touchStartXRef = useRef(null);
+
+  // Referencias para poder "arrastrar" la foto cuando está ampliada en el
+  // lightbox (celular). Van con addEventListener nativo y passive:false
+  // porque React marca touchmove como pasivo por defecto, y necesitamos
+  // preventDefault para que la página no haga scroll mientras se arrastra.
+  const lightboxImgRef = useRef(null);
+  const arrastreZoomRef = useRef({ inicio: null, arrastro: false });
+
+  useEffect(() => {
+    if (!lightboxAbierto || !imagenHoverZoom) return;
+    const el = lightboxImgRef.current;
+    if (!el || tieneMousePreciso()) return; // en desktop el zoom ya sigue al mouse solo
+
+    const handleTouchStart = (e) => {
+      const t = e.touches[0];
+      arrastreZoomRef.current = { inicio: { x: t.clientX, y: t.clientY }, arrastro: false };
+    };
+
+    const handleTouchMove = (e) => {
+      const estado = arrastreZoomRef.current;
+      const t = e.touches[0];
+      if (estado.inicio) {
+        const dx = Math.abs(t.clientX - estado.inicio.x);
+        const dy = Math.abs(t.clientY - estado.inicio.y);
+        if (dx > 6 || dy > 6) estado.arrastro = true;
+      }
+      if (estado.arrastro) {
+        e.preventDefault();
+        const rect = el.getBoundingClientRect();
+        const x = Math.min(100, Math.max(0, ((t.clientX - rect.left) / rect.width) * 100));
+        const y = Math.min(100, Math.max(0, ((t.clientY - rect.top) / rect.height) * 100));
+        setZoomPos({ x, y });
+      }
+    };
+
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [lightboxAbierto, imagenHoverZoom]);
 
   useEffect(() => {
     if (!productoDetalle) return;
@@ -1346,15 +1397,6 @@ export default function App() {
           }
         };
 
-        // El zoom que "sigue" al cursor solo tiene sentido con mouse real.
-        // En celular, el mouse se emula al tocar la pantalla y eso hacía que
-        // la imagen quedara saltando o pegada en zoom sin control. Por eso en
-        // touch usamos, en cambio, un zoom simple de "tocar para ampliar".
-        const tieneMousePreciso = () =>
-          typeof window !== 'undefined' &&
-          window.matchMedia &&
-          window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-
         // Zoom estilo MercadoLibre/Tiendanube: seguir el mouse para definir el
         // punto de la imagen que queda centrado al ampliarla.
         const manejarMouseMoveZoom = (e) => {
@@ -1364,10 +1406,16 @@ export default function App() {
           setZoomPos({ x, y });
         };
 
-        // En celular: un toque sobre la foto amplía centrada en ese punto;
-        // un segundo toque la vuelve a su tamaño normal.
+        // En celular: un toque sobre la foto amplía centrada en ese punto.
+        // Con la foto ya ampliada, arrastrar el dedo la recorre (ver el
+        // useEffect de arriba, que escucha touchmove nativo). Un toque
+        // simple (sin arrastre) sobre la foto ampliada la vuelve a su
+        // tamaño normal.
         const manejarToqueZoom = (e) => {
           if (tieneMousePreciso()) return;
+          const fueArrastre = arrastreZoomRef.current.arrastro;
+          arrastreZoomRef.current = { inicio: null, arrastro: false };
+          if (fueArrastre) return; // se estaba recorriendo la foto, no achicar
           e.preventDefault();
           e.stopPropagation();
           if (imagenHoverZoom) {
@@ -1636,6 +1684,7 @@ export default function App() {
               )}
 
               <div
+                ref={lightboxImgRef}
                 className="relative w-full h-full max-w-5xl max-h-[85vh] overflow-hidden flex items-center justify-center cursor-zoom-in"
                 onClick={(e) => e.stopPropagation()}
                 onMouseEnter={() => { if (tieneMousePreciso()) setImagenHoverZoom(true); }}
@@ -1652,16 +1701,16 @@ export default function App() {
                 />
               </div>
 
-              {!imagenHoverZoom && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
-                  <span className="sm:hidden text-white/70 text-[11px] font-bold">Tocá la foto para ampliar</span>
-                  {listaImagenes.length > 1 && (
-                    <span className="text-white/80 text-xs font-bold">
-                      {imagenActivaIndex + 1} / {listaImagenes.length}
-                    </span>
-                  )}
-                </div>
-              )}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
+                <span className="sm:hidden text-white/70 text-[11px] font-bold">
+                  {imagenHoverZoom ? 'Arrastrá para recorrer · Tocá para volver' : 'Tocá la foto para ampliar'}
+                </span>
+                {listaImagenes.length > 1 && (
+                  <span className="text-white/80 text-xs font-bold">
+                    {imagenActivaIndex + 1} / {listaImagenes.length}
+                  </span>
+                )}
+              </div>
             </div>
           )}
           </>
