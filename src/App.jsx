@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { 
   ShoppingBag, Search, ShoppingCart, X, Plus, Minus, ExternalLink, 
-  MessageCircle, ArrowLeft, Lock, Edit3, Trash2, Tag, Check, Image as ImageIcon, KeyRound, LogOut, Upload, Loader2, Settings, ChevronRight, ChevronLeft, ZoomIn
+  MessageCircle, ArrowLeft, Lock, Edit3, Trash2, Tag, Check, Image as ImageIcon, KeyRound, LogOut, Upload, Loader2, Settings, ChevronRight, ChevronLeft, ZoomIn, Share2
 } from 'lucide-react';
 
 const CLOUDINARY_CLOUD_NAME = "okej62yk"; 
@@ -135,6 +135,52 @@ export default function App() {
     };
   }, []);
 
+  // Si la app se abrió desde un link compartido (?producto=ID&medida=..&
+  // material=..&color=..), en cuanto llegan los productos abrimos
+  // directamente ese detalle con esa variante ya seleccionada. Se aplica
+  // una sola vez, para no reabrir el modal si el usuario ya lo cerró.
+  const linkCompartidoAplicadoRef = useRef(false);
+
+  useEffect(() => {
+    if (linkCompartidoAplicadoRef.current) return;
+    if (!productos || productos.length === 0) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const prodId = params.get('producto');
+    if (!prodId) {
+      linkCompartidoAplicadoRef.current = true;
+      return;
+    }
+
+    const prod = productos.find((p) => String(p.id) === String(prodId));
+    linkCompartidoAplicadoRef.current = true;
+    if (!prod) return;
+
+    abrirDetalleProducto(prod);
+
+    const medida = params.get('medida') || '';
+    const material = params.get('material') || '';
+    const color = params.get('color') || '';
+
+    if (medida || material || color) {
+      const variante = (prod.variantes || []).find((v) =>
+        (medida === '' || v.medida === medida) &&
+        (material === '' || v.material === material) &&
+        (color === '' || v.color === color)
+      );
+      if (variante) {
+        setMedidaSel(variante.medida || '');
+        setMaterialSel(variante.material || '');
+        setColorSel(variante.color || '');
+        if (variante.imagen_asociada_url) {
+          const galeria = construirGaleria(prod);
+          const idx = galeria.findIndex((g) => g.url === variante.imagen_asociada_url);
+          if (idx >= 0) setImagenActivaIndex(idx);
+        }
+      }
+    }
+  }, [productos]);
+
   // Navegación de la galería de fotos con las flechas del teclado (← →),
   // solo mientras el modal de detalle de producto está abierto.
   const touchStartXRef = useRef(null);
@@ -251,6 +297,46 @@ export default function App() {
     setAnimarCarrito(true);
     setTimeout(() => setAnimarCarrito(false), 600);
     setTimeout(() => setToastMensaje(''), 3000);
+  };
+
+  // Toast simple, sin la animación del ícono del carrito (para avisos que
+  // no son de "se agregó al carrito", como copiar un link).
+  const mostrarToastSimple = (mensaje) => {
+    setToastMensaje(mensaje);
+    setTimeout(() => setToastMensaje(''), 3000);
+  };
+
+  // Arma un link directo al producto (y, si hay una variante elegida, a esa
+  // variante puntual) y lo comparte con el share nativo del celular; si no
+  // está disponible (por ejemplo en PC), copia el link al portapapeles.
+  const compartirProducto = async () => {
+    if (!productoDetalle) return;
+
+    const params = new URLSearchParams();
+    params.set('producto', productoDetalle.id);
+    if (medidaSel) params.set('medida', medidaSel);
+    if (materialSel) params.set('material', materialSel);
+    if (colorSel) params.set('color', colorSel);
+
+    const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    const detalleVariante = [medidaSel, materialSel, colorSel].filter(Boolean).join(' / ');
+    const titulo = `${productoDetalle.titulo}${detalleVariante ? ' - ' + detalleVariante : ''}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: titulo, url });
+      } catch (error) {
+        // El usuario canceló el cuadro de compartir nativo: no hacemos nada.
+      }
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      mostrarToastSimple('¡Link copiado!');
+    } catch (error) {
+      mostrarToastSimple('No se pudo copiar el link');
+    }
   };
 
   async function verificarSesion() {
@@ -1625,9 +1711,20 @@ export default function App() {
               {/* DETALLES Y OPCIONES DE VARIANTE */}
               <div className="w-full md:w-1/2 p-6 sm:p-8 flex flex-col justify-between space-y-6">
                 <div className="space-y-4">
-                  <div>
-                    <span className="text-xs font-extrabold text-emerald-800 uppercase tracking-widest">{productoDetalle.categoria}</span>
-                    <h2 className="text-2xl font-extrabold text-slate-900 leading-tight mt-1">{productoDetalle.titulo}</h2>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-extrabold text-emerald-800 uppercase tracking-widest">{productoDetalle.categoria}</span>
+                      <h2 className="text-2xl font-extrabold text-slate-900 leading-tight mt-1">{productoDetalle.titulo}</h2>
+                    </div>
+                    <button
+                      onClick={compartirProducto}
+                      aria-label="Compartir"
+                      title="Compartir"
+                      className="flex-shrink-0 flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl transition-colors"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide hidden sm:inline">Compartir</span>
+                    </button>
                   </div>
 
                   <div className="flex items-baseline gap-3">
