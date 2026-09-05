@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { 
   ShoppingBag, Search, ShoppingCart, X, Plus, Minus, ExternalLink, 
-  MessageCircle, ArrowLeft, Lock, Edit3, Trash2, Tag, Check, Image as ImageIcon, KeyRound, LogOut, Upload, Loader2, Settings
+  MessageCircle, ArrowLeft, Lock, Edit3, Trash2, Tag, Check, Image as ImageIcon, KeyRound, LogOut, Upload, Loader2, Settings, ChevronRight
 } from 'lucide-react';
 
 const CLOUDINARY_CLOUD_NAME = "okej62yk"; 
@@ -17,6 +17,14 @@ export default function App() {
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [soloOfertas, setSoloOfertas] = useState(false);
+
+  // Modal Detalle de Producto estilo Tiendanube
+  const [productoDetalle, setProductoDetalle] = useState(null);
+  const [imagenActivaIndex, setImagenActivaIndex] = useState(0);
+  const [medidaSel, setMedidaSel] = useState('');
+  const [materialSel, setMaterialSel] = useState('');
+  const [colorSel, setColorSel] = useState('');
+  const [cantidadSel, setCantidadSel] = useState(1);
 
   // Configuración Negocio (Logo, Nombre, Subtítulo)
   const [configNegocio, setConfigNegocio] = useState({
@@ -45,10 +53,16 @@ export default function App() {
   const [formProd, setFormProd] = useState({
     titulo: '',
     categoria: '',
+    descripcion: '',
     precio: '',
     precio_oferta: '',
-    imagen_url: ''
+    imagenes: [] // array de URLs
   });
+
+  // Estado para variantes en el form admin
+  const [formVariantes, setFormVariantes] = useState([
+    { medida: '', material: '', color: '', stock: 10, precio: '', precio_oferta: '', imagen_asociada_url: '' }
+  ]);
 
   const WHATSAPP_NUMBER = "5493462693014";
   const GUIA_CLIC_URL = "https://guiaclic.com.ar/aviso/21";
@@ -87,7 +101,10 @@ export default function App() {
       setLoading(true);
       const { data, error } = await supabase
         .from('blanqueria_micasita')
-        .select('*')
+        .select(`
+          *,
+          variantes:blanqueria_micasita_variantes(*)
+        `)
         .order('id', { ascending: false });
 
       if (error) throw error;
@@ -101,47 +118,59 @@ export default function App() {
 
   async function fetchConfigNegocio() {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('config_negocio')
         .select('*')
         .limit(1)
         .single();
 
-      if (data) {
-        setConfigNegocio(data);
-      }
+      if (data) setConfigNegocio(data);
     } catch (error) {
       console.error('Error cargando datos del negocio:', error.message);
     }
   }
 
-  const handleSubirImagen = async (e, esLogo = false) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleSubirImagen = async (e, esLogo = false, esVarianteIndex = null) => {
+    const files = Array.from(e.target.files);
+    if (!files || files.length === 0) return;
 
     try {
       if (esLogo) setSubiendoLogo(true);
       else setSubiendoImagen(true);
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      const urlsSubidas = [];
 
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
-      const data = await res.json();
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+          method: 'POST',
+          body: formData,
+        });
 
-      if (data.secure_url) {
-        if (esLogo) {
-          setConfigNegocio((prev) => ({ ...prev, logo_url: data.secure_url }));
+        const data = await res.json();
+        if (data.secure_url) {
+          urlsSubidas.push(data.secure_url);
         } else {
-          setFormProd((prev) => ({ ...prev, imagen_url: data.secure_url }));
+          throw new Error(data.error?.message || 'Error al subir la imagen');
         }
+      }
+
+      if (esLogo) {
+        setConfigNegocio((prev) => ({ ...prev, logo_url: urlsSubidas[0] }));
+      } else if (esVarianteIndex !== null) {
+        setFormVariantes((prev) => {
+          const copia = [...prev];
+          copia[esVarianteIndex].imagen_asociada_url = urlsSubidas[0];
+          return copia;
+        });
       } else {
-        throw new Error(data.error?.message || 'Error al subir la imagen');
+        setFormProd((prev) => ({
+          ...prev,
+          imagenes: [...prev.imagenes, ...urlsSubidas]
+        }));
       }
     } catch (error) {
       alert('Error al subir la imagen: ' + error.message);
@@ -196,7 +225,6 @@ export default function App() {
 
       if (error) throw error;
 
-      // VALIDACIÓN DE SEGURIDAD
       if (data.user?.email !== EMAIL_AUTORIZADO) {
         await supabase.auth.signOut();
         setErrorPassword('Usuario incorrecto.');
@@ -219,17 +247,84 @@ export default function App() {
     setEsAdmin(false);
   };
 
-  const agregarAlCarrito = (producto) => {
+  // Abrir Modal de Detalle de Producto
+  const abrirDetalleProducto = (prod) => {
+    setProductoDetalle(prod);
+    setImagenActivaIndex(0);
+    setCantidadSel(1);
+
+    const vars = prod.variantes || [];
+    if (vars.length > 0) {
+      setMedidaSel(vars[0].medida || '');
+      setMaterialSel(vars[0].material || '');
+      setColorSel(vars[0].color || '');
+    } else {
+      setMedidaSel('');
+      setMaterialSel('');
+      setColorSel('');
+    }
+  };
+
+  // Calcular variante seleccionada actualmente en el modal
+  const obtenerVarianteSeleccionada = () => {
+    if (!productoDetalle || !productoDetalle.variantes || productoDetalle.variantes.length === 0) return null;
+    return productoDetalle.variantes.find((v) => 
+      (medidaSel === '' || v.medida === medidaSel) &&
+      (materialSel === '' || v.material === materialSel) &&
+      (colorSel === '' || v.color === colorSel)
+    ) || productoDetalle.variantes[0];
+  };
+
+  const varianteActual = obtenerVarianteSeleccionada();
+
+  // Calcular precio actual según la variante o producto base
+  const obtenerPrecioActual = () => {
+    if (varianteActual) {
+      const pOferta = varianteActual.precio_oferta ? Number(varianteActual.precio_oferta) : null;
+      const pNormal = varianteActual.precio ? Number(varianteActual.precio) : Number(productoDetalle?.precio || 0);
+      return {
+        precio: pOferta || pNormal,
+        precioOriginal: pOferta ? pNormal : null,
+        stock: varianteActual.stock ?? 0
+      };
+    }
+    const pOferta = productoDetalle?.precio_oferta ? Number(productoDetalle.precio_oferta) : null;
+    const pNormal = Number(productoDetalle?.precio || 0);
+    return {
+      precio: pOferta || pNormal,
+      precioOriginal: pOferta ? pNormal : null,
+      stock: 999
+    };
+  };
+
+  const agregarAlCarritoDesdeDetalle = () => {
+    if (!productoDetalle) return;
+    const infoPrecio = obtenerPrecioActual();
+
+    const itemCarrito = {
+      id: `${productoDetalle.id}-${varianteActual?.id || 'base'}`,
+      producto_id: productoDetalle.id,
+      variante_id: varianteActual?.id || null,
+      titulo: productoDetalle.titulo,
+      medida: medidaSel,
+      material: materialSel,
+      color: colorSel,
+      precioEfectivo: infoPrecio.precio,
+      cantidad: cantidadSel,
+      imagen: (productoDetalle.imagenes && productoDetalle.imagenes[0]) || productoDetalle.imagen_url || ''
+    };
+
     setCarrito((prev) => {
-      const existe = prev.find((item) => item.id === producto.id);
-      const precioFinal = producto.precio_oferta ? Number(producto.precio_oferta) : Number(producto.precio);
+      const existe = prev.find((item) => item.id === itemCarrito.id);
       if (existe) {
         return prev.map((item) =>
-          item.id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item
+          item.id === itemCarrito.id ? { ...item, cantidad: item.cantidad + cantidadSel } : item
         );
       }
-      return [...prev, { ...producto, precioEfectivo: precioFinal, cantidad: 1 }];
+      return [...prev, itemCarrito];
     });
+
+    setProductoDetalle(null);
     setCarritoAbierto(true);
   };
 
@@ -260,7 +355,13 @@ export default function App() {
     if (carrito.length === 0) return;
     let mensaje = `Hola! Quisiera realizar el siguiente pedido en *${configNegocio.nombre}*:\n\n`;
     carrito.forEach((item) => {
-      mensaje += `• *${item.titulo}* x${item.cantidad} - $${item.precioEfectivo * item.cantidad}\n`;
+      let detalles = [];
+      if (item.medida) detalles.push(`Medida: ${item.medida}`);
+      if (item.material) detalles.push(`Material: ${item.material}`);
+      if (item.color) detalles.push(`Color: ${item.color}`);
+      
+      const strDetalles = detalles.length > 0 ? ` (${detalles.join(', ')})` : '';
+      mensaje += `• *${item.titulo}*${strDetalles} x${item.cantidad} - $${item.precioEfectivo * item.cantidad}\n`;
     });
     mensaje += `\n*TOTAL ESTIMADO: $${totalCarrito}*`;
 
@@ -275,34 +376,65 @@ export default function App() {
     return limpio.charAt(0).toUpperCase() + limpio.slice(1);
   };
 
+  // ADMIN: Guardar Producto y sus Variantes
   const guardarProducto = async (e) => {
     e.preventDefault();
     try {
       const payload = {
         titulo: formProd.titulo,
         categoria: normalizarCategoria(formProd.categoria),
+        descripcion: formProd.descripcion,
         precio: Number(formProd.precio) || 0,
         precio_oferta: formProd.precio_oferta ? Number(formProd.precio_oferta) : null,
-        imagen_url: formProd.imagen_url
+        imagenes: formProd.imagenes,
+        imagen_url: formProd.imagenes[0] || ''
       };
+
+      let prodId = productoEditar?.id;
 
       if (productoEditar) {
         const { error } = await supabase
           .from('blanqueria_micasita')
           .update(payload)
-          .eq('id', productoEditar.id);
+          .eq('id', prodId);
         if (error) throw error;
+
+        // Borrar variantes viejas para reinsertar las actualizadas
+        await supabase.from('blanqueria_micasita_variantes').delete().eq('producto_id', prodId);
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('blanqueria_micasita')
-          .insert([payload]);
+          .insert([payload])
+          .select()
+          .single();
         if (error) throw error;
+        prodId = data.id;
       }
 
-      setFormProd({ titulo: '', categoria: '', precio: '', precio_oferta: '', imagen_url: '' });
+      // Insertar Variantes
+      if (formVariantes.length > 0 && prodId) {
+        const variantesPayload = formVariantes.map((v) => ({
+          producto_id: prodId,
+          medida: v.medida,
+          material: v.material,
+          color: v.color,
+          stock: Number(v.stock) || 0,
+          precio: v.precio ? Number(v.precio) : null,
+          precio_oferta: v.precio_oferta ? Number(v.precio_oferta) : null,
+          imagen_asociada_url: v.imagen_asociada_url
+        }));
+
+        const { error: errVar } = await supabase
+          .from('blanqueria_micasita_variantes')
+          .insert(variantesPayload);
+        if (errVar) throw errVar;
+      }
+
+      setFormProd({ titulo: '', categoria: '', descripcion: '', precio: '', precio_oferta: '', imagenes: [] });
+      setFormVariantes([{ medida: '', material: '', color: '', stock: 10, precio: '', precio_oferta: '', imagen_asociada_url: '' }]);
       setProductoEditar(null);
       fetchProductos();
-      alert('¡Producto guardado correctamente!');
+      alert('¡Producto y variantes guardados correctamente!');
     } catch (err) {
       alert('Error al guardar el producto: ' + err.message);
     }
@@ -310,13 +442,30 @@ export default function App() {
 
   const editarProducto = (prod) => {
     setProductoEditar(prod);
+    const imgs = prod.imagenes && prod.imagenes.length > 0 ? prod.imagenes : (prod.imagen_url ? [prod.imagen_url] : []);
     setFormProd({
       titulo: prod.titulo || '',
       categoria: prod.categoria || '',
+      descripcion: prod.descripcion || '',
       precio: prod.precio || '',
       precio_oferta: prod.precio_oferta || '',
-      imagen_url: prod.imagen_url || ''
+      imagenes: imgs
     });
+
+    if (prod.variantes && prod.variantes.length > 0) {
+      setFormVariantes(prod.variantes.map((v) => ({
+        medida: v.medida || '',
+        material: v.material || '',
+        color: v.color || '',
+        stock: v.stock ?? 10,
+        precio: v.precio || '',
+        precio_oferta: v.precio_oferta || '',
+        imagen_asociada_url: v.imagen_asociada_url || ''
+      })));
+    } else {
+      setFormVariantes([{ medida: '', material: '', color: '', stock: 10, precio: '', precio_oferta: '', imagen_asociada_url: '' }]);
+    }
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -340,9 +489,10 @@ export default function App() {
 
   const obtenerImagenCategoria = (cat) => {
     const prod = productos.find(
-      (p) => (p.categoria || '').trim().toLowerCase() === cat.trim().toLowerCase() && p.imagen_url
+      (p) => (p.categoria || '').trim().toLowerCase() === cat.trim().toLowerCase() && 
+      ((p.imagenes && p.imagenes[0]) || p.imagen_url)
     );
-    return prod?.imagen_url || 'https://res.cloudinary.com/okej62yk/image/upload/v1787538636/spacejoy-nEtpvJjnPVo-unsplash.jpg';
+    return (prod?.imagenes && prod?.imagenes[0]) || prod?.imagen_url || 'https://res.cloudinary.com/okej62yk/image/upload/v1787538636/spacejoy-nEtpvJjnPVo-unsplash.jpg';
   };
 
   const productosFiltrados = productos.filter((p) => {
@@ -548,8 +698,8 @@ export default function App() {
               </button>
             </form>
 
-            {/* SECCIÓN CARGA DE PRODUCTOS */}
-            <form onSubmit={guardarProducto} className="bg-white p-5 rounded-xl border border-amber-200 space-y-4 shadow-sm">
+            {/* SECCIÓN CARGA DE PRODUCTOS Y VARIANTES */}
+            <form onSubmit={guardarProducto} className="bg-white p-5 rounded-xl border border-amber-200 space-y-6 shadow-sm">
               <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
                 {productoEditar ? '✏️ Modificar Producto' : '➕ CARGAR NUEVO PRODUCTO'}
               </h4>
@@ -560,7 +710,7 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    placeholder="Ej. Juego de Sábanas 2 Plazas"
+                    placeholder="Ej. Juego de Sábanas 2 1/2 Plazas"
                     value={formProd.titulo}
                     onChange={(e) => setFormProd({ ...formProd, titulo: e.target.value })}
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-amber-500"
@@ -580,7 +730,7 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Precio Normal ($)</label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Precio Base ($)</label>
                   <input
                     type="number"
                     required
@@ -592,7 +742,7 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-rose-700 block mb-1">Precio Oferta ($ - Opcional)</label>
+                  <label className="text-xs font-bold text-rose-700 block mb-1">Precio Oferta Base ($ - Opcional)</label>
                   <input
                     type="number"
                     placeholder="Dejar vacío si no hay oferta"
@@ -603,13 +753,14 @@ export default function App() {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Imagen del Producto</label>
-                  <div className="flex items-center gap-3">
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Imágenes del Producto (Múltiples fotos)</label>
+                  <div className="flex flex-wrap items-center gap-3">
                     <label className="cursor-pointer bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold py-2.5 px-4 rounded-lg flex items-center gap-2 shadow transition-colors">
                       {subiendoImagen ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      {subiendoImagen ? 'Subiendo foto...' : '📷 Sacar o elegir foto'}
+                      {subiendoImagen ? 'Subiendo fotos...' : '📷 Agregar Fotos'}
                       <input 
                         type="file" 
+                        multiple 
                         accept="image/*" 
                         onChange={(e) => handleSubirImagen(e, false)} 
                         disabled={subiendoImagen} 
@@ -617,14 +768,134 @@ export default function App() {
                       />
                     </label>
 
-                    {formProd.imagen_url && (
-                      <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 p-1.5 rounded-lg">
-                        <img src={formProd.imagen_url} alt="Vista previa" className="w-8 h-8 object-cover rounded" />
-                        <span className="text-[11px] text-emerald-800 font-bold">¡Foto lista para guardar!</span>
+                    {formProd.imagenes.map((url, idx) => (
+                      <div key={idx} className="relative group w-10 h-10 border rounded-lg overflow-hidden">
+                        <img src={url} alt="Cargada" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setFormProd(prev => ({ ...prev, imagenes: prev.imagenes.filter((_, i) => i !== idx) }))}
+                          className="absolute inset-0 bg-red-600/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
+
+                <div className="sm:col-span-3">
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Descripción Detallada</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Escribí características del producto, calidad de la tela, etc."
+                    value={formProd.descripcion}
+                    onChange={(e) => setFormProd({ ...formProd, descripcion: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* GESTIÓN DE VARIANTES (Talles/Medidas, Material, Color, Stock) */}
+              <div className="border-t border-amber-200 pt-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <h5 className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                    Variantes de Producto (Medida / Material / Color / Stock)
+                  </h5>
+                  <button
+                    type="button"
+                    onClick={() => setFormVariantes(prev => [...prev, { medida: '', material: '', color: '', stock: 10, precio: '', precio_oferta: '', imagen_asociada_url: '' }])}
+                    className="text-xs font-bold bg-emerald-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-emerald-800"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Agregar Variante
+                  </button>
+                </div>
+
+                {formVariantes.map((v, idx) => (
+                  <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-6 gap-2 items-center">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block">Medida/Talle</span>
+                      <input
+                        type="text"
+                        placeholder="2 1/2 plazas"
+                        value={v.medida}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, medida: val } : item));
+                        }}
+                        className="w-full p-1.5 border rounded text-xs font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block">Material</span>
+                      <input
+                        type="text"
+                        placeholder="100% Algodón"
+                        value={v.material}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, material: val } : item));
+                        }}
+                        className="w-full p-1.5 border rounded text-xs font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block">Color</span>
+                      <input
+                        type="text"
+                        placeholder="Blanco"
+                        value={v.color}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, color: val } : item));
+                        }}
+                        className="w-full p-1.5 border rounded text-xs font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block">Stock Disponible</span>
+                      <input
+                        type="number"
+                        placeholder="10"
+                        value={v.stock}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, stock: val } : item));
+                        }}
+                        className="w-full p-1.5 border rounded text-xs font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block">Precio Variante (Opcional)</span>
+                      <input
+                        type="number"
+                        placeholder="Si difiere"
+                        value={v.precio}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, precio: val } : item));
+                        }}
+                        className="w-full p-1.5 border rounded text-xs font-medium"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-3 sm:pt-0">
+                      {formVariantes.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setFormVariantes(prev => prev.filter((_, i) => i !== idx))}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                          title="Eliminar Variante"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -638,7 +909,11 @@ export default function App() {
                 {productoEditar && (
                   <button
                     type="button"
-                    onClick={() => { setProductoEditar(null); setFormProd({ titulo: '', categoria: '', precio: '', precio_oferta: '', imagen_url: '' }); }}
+                    onClick={() => { 
+                      setProductoEditar(null); 
+                      setFormProd({ titulo: '', categoria: '', descripcion: '', precio: '', precio_oferta: '', imagenes: [] });
+                      setFormVariantes([{ medida: '', material: '', color: '', stock: 10, precio: '', precio_oferta: '', imagen_asociada_url: '' }]);
+                    }}
                     className="bg-slate-200 text-slate-800 font-bold text-xs uppercase px-4 py-2.5 rounded-xl"
                   >
                     Cancelar
@@ -673,8 +948,14 @@ export default function App() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
                   {productosFiltrados.map((prod) => {
                     const tieneOferta = prod.precio_oferta && Number(prod.precio_oferta) > 0;
+                    const fotoPrincipal = (prod.imagenes && prod.imagenes[0]) || prod.imagen_url;
+
                     return (
-                      <div key={prod.id} className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between relative group">
+                      <div 
+                        key={prod.id} 
+                        onClick={() => abrirDetalleProducto(prod)}
+                        className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative group cursor-pointer"
+                      >
                         {tieneOferta && (
                           <div className="absolute top-3 left-3 z-10 bg-rose-600 text-white text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full shadow">
                             OFERTA
@@ -682,7 +963,10 @@ export default function App() {
                         )}
 
                         {esAdmin && (
-                          <div className="absolute top-2 right-2 z-10 flex gap-1 bg-white/95 backdrop-blur-sm p-1 rounded-xl shadow">
+                          <div 
+                            className="absolute top-2 right-2 z-20 flex gap-1 bg-white/95 backdrop-blur-sm p-1 rounded-xl shadow"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <button onClick={() => editarProducto(prod)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg">
                               <Edit3 className="w-4 h-4" />
                             </button>
@@ -694,8 +978,8 @@ export default function App() {
 
                         <div>
                           <div className="h-48 sm:h-56 w-full bg-slate-100 relative overflow-hidden">
-                            {prod.imagen_url ? (
-                              <img src={prod.imagen_url} alt={prod.titulo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            {fotoPrincipal ? (
+                              <img src={fotoPrincipal} alt={prod.titulo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                             ) : (
                               <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
                                 <ImageIcon className="w-8 h-8 mb-1" />
@@ -723,10 +1007,9 @@ export default function App() {
 
                         <div className="p-3.5 pt-0">
                           <button
-                            onClick={() => agregarAlCarrito(prod)}
-                            className="w-full py-2.5 bg-slate-900 hover:bg-emerald-800 text-white rounded-xl text-xs font-extrabold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 shadow"
+                            className="w-full py-2.5 bg-slate-900 group-hover:bg-emerald-800 text-white rounded-xl text-xs font-extrabold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 shadow"
                           >
-                            <ShoppingCart className="w-4 h-4" /> Agregar
+                            Ver Producto
                           </button>
                         </div>
                       </div>
@@ -740,7 +1023,7 @@ export default function App() {
             <div className="space-y-12">
               <section className="relative rounded-3xl overflow-hidden shadow-2xl bg-slate-950 min-h-[340px] sm:min-h-[420px] flex items-center p-6 sm:p-12 text-white">
                 <img
-                  src={productos[0]?.imagen_url || "https://res.cloudinary.com/okej62yk/image/upload/v1787538636/spacejoy-nEtpvJjnPVo-unsplash.jpg"}
+                  src={(productos[0]?.imagenes && productos[0]?.imagenes[0]) || productos[0]?.imagen_url || "https://res.cloudinary.com/okej62yk/image/upload/v1787538636/spacejoy-nEtpvJjnPVo-unsplash.jpg"}
                   alt="Colección Blanquería"
                   className="absolute inset-0 w-full h-full object-cover opacity-50"
                 />
@@ -802,6 +1085,171 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* MODAL DETALLE DE PRODUCTO ESTILO TIENDANUBE */}
+      {productoDetalle && (() => {
+        const infoPrecio = obtenerPrecioActual();
+        const listaImagenes = (productoDetalle.imagenes && productoDetalle.imagenes.length > 0)
+          ? productoDetalle.imagenes
+          : (productoDetalle.imagen_url ? [productoDetalle.imagen_url] : []);
+
+        const variantes = productoDetalle.variantes || [];
+        const medidasDisponibles = [...new Set(variantes.map(v => v.medida).filter(Boolean))];
+        const materialesDisponibles = [...new Set(variantes.map(v => v.material).filter(Boolean))];
+        const coloresDisponibles = [...new Set(variantes.map(v => v.color).filter(Boolean))];
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl border border-slate-100 my-auto relative flex flex-col md:flex-row">
+              <button 
+                onClick={() => setProductoDetalle(null)} 
+                className="absolute top-4 right-4 z-20 bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* GALERÍA DE FOTOS */}
+              <div className="w-full md:w-1/2 p-6 bg-slate-50 flex flex-col items-center justify-between border-b md:border-b-0 md:border-r border-slate-200">
+                <div className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden bg-white shadow-inner relative flex items-center justify-center">
+                  {listaImagenes.length > 0 ? (
+                    <img 
+                      src={listaImagenes[imagenActivaIndex] || listaImagenes[0]} 
+                      alt={productoDetalle.titulo} 
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <ImageIcon className="w-12 h-12 text-slate-300" />
+                  )}
+                </div>
+
+                {/* MINIATURAS DE FOTOS */}
+                {listaImagenes.length > 1 && (
+                  <div className="flex items-center gap-3 mt-4 overflow-x-auto max-w-full pb-2">
+                    {listaImagenes.map((img, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setImagenActivaIndex(idx)}
+                        className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 ${imagenActivaIndex === idx ? 'border-emerald-700 scale-105 shadow' : 'border-slate-200 opacity-60'}`}
+                      >
+                        <img src={img} alt="Miniatura" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* DETALLES Y OPCIONES DE VARIANTE */}
+              <div className="w-full md:w-1/2 p-6 sm:p-8 flex flex-col justify-between space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <span className="text-xs font-extrabold text-emerald-800 uppercase tracking-widest">{productoDetalle.categoria}</span>
+                    <h2 className="text-2xl font-extrabold text-slate-900 leading-tight mt-1">{productoDetalle.titulo}</h2>
+                  </div>
+
+                  <div className="flex items-baseline gap-3">
+                    <span className="text-3xl font-black text-slate-900">${infoPrecio.precio}</span>
+                    {infoPrecio.precioOriginal && (
+                      <span className="text-sm font-bold text-slate-400 line-through">${infoPrecio.precioOriginal}</span>
+                    )}
+                  </div>
+
+                  {productoDetalle.descripcion && (
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium bg-slate-50 p-3 rounded-xl border border-slate-100">
+                      {productoDetalle.descripcion}
+                    </p>
+                  )}
+
+                  {/* SELECTORES DE VARIANTES */}
+                  <div className="space-y-3 pt-2">
+                    {medidasDisponibles.length > 0 && (
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Medida / Talle:</label>
+                        <select
+                          value={medidaSel}
+                          onChange={(e) => setMedidaSel(e.target.value)}
+                          className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500"
+                        >
+                          {medidasDisponibles.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {materialesDisponibles.length > 0 && (
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Material:</label>
+                        <select
+                          value={materialSel}
+                          onChange={(e) => setMaterialSel(e.target.value)}
+                          className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500"
+                        >
+                          {materialesDisponibles.map((mat) => (
+                            <option key={mat} value={mat}>{mat}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {coloresDisponibles.length > 0 && (
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Color:</label>
+                        <select
+                          value={colorSel}
+                          onChange={(e) => setColorSel(e.target.value)}
+                          className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500"
+                        >
+                          {coloresDisponibles.map((col) => (
+                            <option key={col} value={col}>{col}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* INDICADOR DE STOCK Y CANTIDAD */}
+                  <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                    <div>
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider block text-slate-500">Stock disponible:</span>
+                      <span className={`text-xs font-black ${infoPrecio.stock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                        {infoPrecio.stock > 0 ? `${infoPrecio.stock} unidades` : 'Sin stock'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center border border-slate-300 rounded-xl bg-slate-50">
+                      <button 
+                        onClick={() => setCantidadSel(prev => Math.max(1, prev - 1))}
+                        className="p-2 text-slate-600 hover:text-slate-900"
+                        disabled={cantidadSel <= 1}
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="px-3 text-xs font-extrabold">{cantidadSel}</span>
+                      <button 
+                        onClick={() => setCantidadSel(prev => Math.min(infoPrecio.stock, prev + 1))}
+                        className="p-2 text-slate-600 hover:text-slate-900"
+                        disabled={cantidadSel >= infoPrecio.stock}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BOTÓN AGREGAR AL CARRITO */}
+                <button
+                  onClick={agregarAlCarritoDesdeDetalle}
+                  disabled={infoPrecio.stock <= 0}
+                  className="w-full py-4 bg-emerald-800 hover:bg-emerald-900 text-white rounded-2xl font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ShoppingCart className="w-4 h-4" /> 
+                  {infoPrecio.stock > 0 ? 'Agregar al Carrito' : 'Sin Stock'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Botón WhatsApp */}
       <a
@@ -895,14 +1343,19 @@ export default function App() {
                 carrito.map((item) => (
                   <div key={item.id} className="flex gap-3 items-center border-b border-slate-100 pb-3">
                     <div className="w-12 h-12 bg-slate-100 rounded-xl overflow-hidden flex-shrink-0">
-                      {item.imagen_url ? (
-                        <img src={item.imagen_url} alt={item.titulo} className="w-full h-full object-cover" />
+                      {item.imagen ? (
+                        <img src={item.imagen} alt={item.titulo} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-400">Sin foto</div>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="font-bold text-xs text-slate-900 truncate">{item.titulo}</h4>
+                      {(item.medida || item.material || item.color) && (
+                        <p className="text-[10px] text-slate-500 font-medium truncate">
+                          {[item.medida, item.material, item.color].filter(Boolean).join(' / ')}
+                        </p>
+                      )}
                       <p className="text-xs font-extrabold text-emerald-800">${item.precioEfectivo}</p>
                     </div>
                     <div className="flex items-center border border-slate-200 rounded-lg">
