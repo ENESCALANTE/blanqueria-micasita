@@ -328,6 +328,7 @@ export default function App() {
     setProductoDetalle(prod);
     setCantidadSel(1);
     setLightboxAbierto(false);
+    setImagenHoverZoom(false);
 
     const vars = prod.variantes || [];
     const galeria = construirGaleria(prod);
@@ -1321,11 +1322,13 @@ export default function App() {
         const irImagenSiguiente = () => {
           if (listaImagenes.length <= 1) return;
           setImagenVarianteDirecta(null);
+          setImagenHoverZoom(false);
           setImagenActivaIndex((prev) => (prev + 1) % listaImagenes.length);
         };
         const irImagenAnterior = () => {
           if (listaImagenes.length <= 1) return;
           setImagenVarianteDirecta(null);
+          setImagenHoverZoom(false);
           setImagenActivaIndex((prev) => (prev - 1 + listaImagenes.length) % listaImagenes.length);
         };
 
@@ -1343,6 +1346,15 @@ export default function App() {
           }
         };
 
+        // El zoom que "sigue" al cursor solo tiene sentido con mouse real.
+        // En celular, el mouse se emula al tocar la pantalla y eso hacía que
+        // la imagen quedara saltando o pegada en zoom sin control. Por eso en
+        // touch usamos, en cambio, un zoom simple de "tocar para ampliar".
+        const tieneMousePreciso = () =>
+          typeof window !== 'undefined' &&
+          window.matchMedia &&
+          window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
         // Zoom estilo MercadoLibre/Tiendanube: seguir el mouse para definir el
         // punto de la imagen que queda centrado al ampliarla.
         const manejarMouseMoveZoom = (e) => {
@@ -1352,11 +1364,30 @@ export default function App() {
           setZoomPos({ x, y });
         };
 
+        // En celular: un toque sobre la foto amplía centrada en ese punto;
+        // un segundo toque la vuelve a su tamaño normal.
+        const manejarToqueZoom = (e) => {
+          if (tieneMousePreciso()) return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (imagenHoverZoom) {
+            setImagenHoverZoom(false);
+            return;
+          }
+          const touch = e.changedTouches[0];
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = ((touch.clientX - rect.left) / rect.width) * 100;
+          const y = ((touch.clientY - rect.top) / rect.height) * 100;
+          setZoomPos({ x, y });
+          setImagenHoverZoom(true);
+        };
+
         const cerrarDetalle = () => {
           setProductoDetalle(null);
           setLightboxAbierto(false);
           setImagenHoverZoom(false);
         };
+
 
         const variantes = productoDetalle.variantes || [];
         const medidasDisponibles = [...new Set(variantes.map(v => v.medida).filter(Boolean))];
@@ -1383,13 +1414,14 @@ export default function App() {
                     if (touchStartXRef.current === null) return;
                     const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
                     touchStartXRef.current = null;
-                    if (Math.abs(deltaX) < 40) return; // umbral mínimo para considerarlo swipe
+                    if (Math.abs(deltaX) < 40) return; // fue un toque (tap), no un swipe: dejamos que abra el zoom grande
+                    e.preventDefault(); // fue un swipe: no dejamos que además dispare el click de abajo
                     if (deltaX < 0) irImagenSiguiente();
                     else irImagenAnterior();
                   }}
-                  onMouseEnter={() => setImagenHoverZoom(true)}
+                  onMouseEnter={() => { if (tieneMousePreciso()) setImagenHoverZoom(true); }}
                   onMouseLeave={() => setImagenHoverZoom(false)}
-                  onMouseMove={manejarMouseMoveZoom}
+                  onMouseMove={(e) => { if (tieneMousePreciso()) manejarMouseMoveZoom(e); }}
                   onClick={() => imagenAMostrar && setLightboxAbierto(true)}
                 >
                   {imagenAMostrar ? (
@@ -1606,9 +1638,10 @@ export default function App() {
               <div
                 className="relative w-full h-full max-w-5xl max-h-[85vh] overflow-hidden flex items-center justify-center cursor-zoom-in"
                 onClick={(e) => e.stopPropagation()}
-                onMouseEnter={() => setImagenHoverZoom(true)}
+                onMouseEnter={() => { if (tieneMousePreciso()) setImagenHoverZoom(true); }}
                 onMouseLeave={() => setImagenHoverZoom(false)}
-                onMouseMove={manejarMouseMoveZoom}
+                onMouseMove={(e) => { if (tieneMousePreciso()) manejarMouseMoveZoom(e); }}
+                onTouchEnd={manejarToqueZoom}
               >
                 <img
                   src={imagenAMostrar}
@@ -1619,9 +1652,14 @@ export default function App() {
                 />
               </div>
 
-              {listaImagenes.length > 1 && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-xs font-bold">
-                  {imagenActivaIndex + 1} / {listaImagenes.length}
+              {!imagenHoverZoom && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
+                  <span className="sm:hidden text-white/70 text-[11px] font-bold">Tocá la foto para ampliar</span>
+                  {listaImagenes.length > 1 && (
+                    <span className="text-white/80 text-xs font-bold">
+                      {imagenActivaIndex + 1} / {listaImagenes.length}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
