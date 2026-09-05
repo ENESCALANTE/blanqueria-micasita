@@ -177,7 +177,7 @@ export default function App() {
       }
     } catch (error) {
       alert('Error al subir la imagen: ' + error.message);
-    } finally {
+    } fontal {
       if (esLogo) setSubiendoLogo(false);
       else if (esVarianteIndex !== null) setSubiendoImagenVarIdx(null);
       else setSubiendoImagen(false);
@@ -836,7 +836,7 @@ export default function App() {
               <div className="border-t border-amber-200 pt-4 space-y-3">
                 <div className="flex justify-between items-center">
                   <h5 className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                    Variantes de Producto (Medida / Material / Color / Stock / Foto Específica)
+                    Variantes de Producto (Medida / Material / Color / Stock / Precio / Foto)
                   </h5>
                   <button
                     type="button"
@@ -848,9 +848,9 @@ export default function App() {
                 </div>
 
                 {formVariantes.map((v, idx) => (
-                  <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-7 gap-2 items-center">
+                  <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-3 md:grid-cols-7 gap-3 items-center">
                     <div>
-                      <span className="text-[10px] font-bold text-slate-500 block">Medida/Talle</span>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Medida/Talle</label>
                       <input
                         type="text"
                         placeholder="2 1/2"
@@ -859,12 +859,12 @@ export default function App() {
                           const val = e.target.value;
                           setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, medida: val } : item));
                         }}
-                        className="w-full p-1.5 border rounded text-xs font-medium"
+                        className="w-full p-2 border rounded-lg text-xs font-medium bg-white"
                       />
                     </div>
 
                     <div>
-                      <span className="text-[10px] font-bold text-slate-500 block">Material</span>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Material</label>
                       <input
                         type="text"
                         placeholder="Algodon"
@@ -873,12 +873,12 @@ export default function App() {
                           const val = e.target.value;
                           setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, material: val } : item));
                         }}
-                        className="w-full p-1.5 border rounded text-xs font-medium"
+                        className="w-full p-2 border rounded-lg text-xs font-medium bg-white"
                       />
                     </div>
 
                     <div>
-                      <span className="text-[10px] font-bold text-slate-500 block">Color</span>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Color</label>
                       <input
                         type="text"
                         placeholder="Blanco"
@@ -887,12 +887,12 @@ export default function App() {
                           const val = e.target.value;
                           setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, color: val } : item));
                         }}
-                        className="w-full p-1.5 border rounded text-xs font-medium"
+                        className="w-full p-2 border rounded-lg text-xs font-medium bg-white"
                       />
                     </div>
 
                     <div>
-                      <span className="text-[10px] font-bold text-slate-500 block">Stock</span>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Stock</label>
                       <input
                         type="number"
                         placeholder="10"
@@ -901,12 +901,12 @@ export default function App() {
                           const val = e.target.value;
                           setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, stock: val } : item));
                         }}
-                        className="w-full p-1.5 border rounded text-xs font-medium"
+                        className="w-full p-2 border rounded-lg text-xs font-medium bg-white"
                       />
                     </div>
 
                     <div>
-                      <span className="text-[10px] font-bold text-slate-500 block">Precio Variante</span>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Precio Variante</label>
                       <input
                         type="number"
                         placeholder="Si difiere"
@@ -915,16 +915,17 @@ export default function App() {
                           const val = e.target.value;
                           setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, precio: val } : item));
                         }}
-                        className="w-full p-1.5 border rounded text-xs font-medium"
+                        className="w-full p-2 border rounded-lg text-xs font-medium bg-white"
                       />
                     </div>
 
+                    {/* COLUMNA EXPLICITA PARA LA FOTO DE VARIANTE */}
                     <div>
-                      <span className="text-[10px] font-bold text-slate-500 block">Foto de la Variante</span>
-                      <div className="flex items-center gap-1.5">
-                        <label className="cursor-pointer bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-bold py-1.5 px-2 rounded flex items-center gap-1">
-                          {subiendoImagenVarIdx === idx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                          {v.imagen_asociada_url ? 'Cambiar' : 'Foto'}
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Foto Variante</label>
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-bold py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 w-full shadow-sm transition-colors">
+                          {subiendoImagenVarIdx === idx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                          <span>{v.imagen_asociada_url ? 'Cambiar' : 'Subir'}</span>
                           <input 
                             type="file" 
                             accept="image/*" 
@@ -933,27 +934,28 @@ export default function App() {
                             className="hidden" 
                           />
                         </label>
+
                         {v.imagen_asociada_url && (
-                          <div className="relative group w-7 h-7 border rounded overflow-hidden">
-                            <img src={v.imagen_asociada_url} alt="Var" className="w-full h-full object-cover" />
+                          <div className="relative group w-8 h-8 border border-slate-300 rounded-lg overflow-hidden flex-shrink-0">
+                            <img src={v.imagen_asociada_url} alt="Variante" className="w-full h-full object-cover" />
                             <button
                               type="button"
                               onClick={() => setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, imagen_asociada_url: '' } : item))}
                               className="absolute inset-0 bg-red-600/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-3 sm:pt-0 justify-end">
+                    <div className="flex items-center justify-end pt-2 md:pt-4">
                       {formVariantes.length > 1 && (
                         <button
                           type="button"
                           onClick={() => setFormVariantes(prev => prev.filter((_, i) => i !== idx))}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                          className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
                           title="Eliminar Variante"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -964,32 +966,19 @@ export default function App() {
                 ))}
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="pt-4 border-t border-amber-200">
                 <button
                   type="submit"
                   disabled={subiendoImagen || subiendoImagenVarIdx !== null}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow disabled:opacity-50"
+                  className="w-full bg-emerald-800 hover:bg-emerald-900 text-white font-extrabold text-xs uppercase tracking-wider py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
                 >
-                  <Check className="w-4 h-4" /> {productoEditar ? 'Guardar Cambios' : 'Publicar Producto'}
+                  <Check className="w-4 h-4" /> {productoEditar ? 'Guardar Cambios del Producto' : 'Publicar Producto'}
                 </button>
-                {productoEditar && (
-                  <button
-                    type="button"
-                    onClick={() => { 
-                      setProductoEditar(null); 
-                      setFormProd({ titulo: '', categoria: '', descripcion: '', precio: '', precio_oferta: '', imagenes: [] });
-                      setFormVariantes([{ medida: '', material: '', color: '', stock: 10, precio: '', precio_oferta: '', imagen_asociada_url: '' }]);
-                    }}
-                    className="bg-slate-200 text-slate-800 font-bold text-xs uppercase px-4 py-2.5 rounded-xl"
-                  >
-                    Cancelar
-                  </button>
-                )}
               </div>
             </form>
           </section>
         )}
-
+        
         {/* LISTADO DE PRODUCTOS */}
         <main className="max-w-6xl mx-auto px-4 py-8">
           {categoriaSeleccionada || busqueda || soloOfertas ? (
