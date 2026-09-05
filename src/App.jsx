@@ -1310,9 +1310,11 @@ export default function App() {
       {/* MODAL DETALLE DE PRODUCTO ESTILO TIENDANUBE */}
       {productoDetalle && (() => {
         const infoPrecio = obtenerPrecioActual();
-        const listaImagenes = (productoDetalle.imagenes && productoDetalle.imagenes.length > 0)
-          ? productoDetalle.imagenes
-          : (productoDetalle.imagen_url ? [productoDetalle.imagen_url] : []);
+        // Galería completa: fotos generales del producto + foto propia de cada
+        // variante, sin duplicados. Así el cliente puede recorrer todas las
+        // fotos (de cualquier medida/material/color) desde las miniaturas.
+        const galeriaCompleta = construirGaleria(productoDetalle);
+        const listaImagenes = galeriaCompleta.map((g) => g.url);
 
         const imagenAMostrar = imagenVarianteDirecta || listaImagenes[imagenActivaIndex] || listaImagenes[0];
 
@@ -1327,16 +1329,46 @@ export default function App() {
           setImagenActivaIndex((prev) => (prev - 1 + listaImagenes.length) % listaImagenes.length);
         };
 
+        // Al elegir una miniatura, si esa foto pertenece a una variante puntual,
+        // sincronizamos los selectores de medida/material/color con esa variante
+        // para que el cliente pueda ir directo a "Agregar al carrito".
+        const seleccionarFoto = (idx) => {
+          const item = galeriaCompleta[idx];
+          setImagenActivaIndex(idx);
+          setImagenVarianteDirecta(null);
+          if (item?.variante) {
+            setMedidaSel(item.variante.medida || '');
+            setMaterialSel(item.variante.material || '');
+            setColorSel(item.variante.color || '');
+          }
+        };
+
+        // Zoom estilo MercadoLibre/Tiendanube: seguir el mouse para definir el
+        // punto de la imagen que queda centrado al ampliarla.
+        const manejarMouseMoveZoom = (e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = ((e.clientX - rect.left) / rect.width) * 100;
+          const y = ((e.clientY - rect.top) / rect.height) * 100;
+          setZoomPos({ x, y });
+        };
+
+        const cerrarDetalle = () => {
+          setProductoDetalle(null);
+          setLightboxAbierto(false);
+          setImagenHoverZoom(false);
+        };
+
         const variantes = productoDetalle.variantes || [];
         const medidasDisponibles = [...new Set(variantes.map(v => v.medida).filter(Boolean))];
         const materialesDisponibles = [...new Set(variantes.map(v => v.material).filter(Boolean))];
         const coloresDisponibles = [...new Set(variantes.map(v => v.color).filter(Boolean))];
 
         return (
+          <>
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto">
             <div className="bg-white rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl border border-slate-100 my-auto relative flex flex-col md:flex-row">
               <button 
-                onClick={() => setProductoDetalle(null)} 
+                onClick={cerrarDetalle} 
                 className="absolute top-4 right-4 z-20 bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 rounded-full transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -1345,7 +1377,7 @@ export default function App() {
               {/* GALERÍA DE FOTOS */}
               <div className="w-full md:w-1/2 p-6 bg-slate-50 flex flex-col items-center justify-between border-b md:border-b-0 md:border-r border-slate-200">
                 <div
-                  className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden bg-white shadow-inner relative flex items-center justify-center group touch-pan-y"
+                  className="w-full h-80 sm:h-[28rem] rounded-2xl overflow-hidden bg-white shadow-inner relative flex items-center justify-center group touch-pan-y cursor-zoom-in"
                   onTouchStart={(e) => { touchStartXRef.current = e.touches[0].clientX; }}
                   onTouchEnd={(e) => {
                     if (touchStartXRef.current === null) return;
@@ -1355,16 +1387,28 @@ export default function App() {
                     if (deltaX < 0) irImagenSiguiente();
                     else irImagenAnterior();
                   }}
+                  onMouseEnter={() => setImagenHoverZoom(true)}
+                  onMouseLeave={() => setImagenHoverZoom(false)}
+                  onMouseMove={manejarMouseMoveZoom}
+                  onClick={() => imagenAMostrar && setLightboxAbierto(true)}
                 >
                   {imagenAMostrar ? (
                     <img 
                       src={imagenAMostrar} 
                       alt={productoDetalle.titulo} 
-                      className="w-full h-full object-contain select-none"
+                      className="w-full h-full object-contain select-none transition-transform duration-150 ease-out"
+                      style={imagenHoverZoom ? { transform: 'scale(2)', transformOrigin: `${zoomPos.x}% ${zoomPos.y}%` } : undefined}
                       draggable={false}
                     />
                   ) : (
                     <ImageIcon className="w-12 h-12 text-slate-300" />
+                  )}
+
+                  {/* ÍCONO DE LUPA (indica que se puede ampliar) */}
+                  {imagenAMostrar && (
+                    <div className="absolute bottom-3 right-3 z-10 bg-white/90 text-slate-700 p-2 rounded-full shadow pointer-events-none">
+                      <ZoomIn className="w-4 h-4" />
+                    </div>
                   )}
 
                   {/* FLECHAS LATERALES DE NAVEGACIÓN (estilo Tiendanube/MercadoLibre) */}
@@ -1372,7 +1416,7 @@ export default function App() {
                     <>
                       <button
                         type="button"
-                        onClick={irImagenAnterior}
+                        onClick={(e) => { e.stopPropagation(); irImagenAnterior(); }}
                         aria-label="Foto anterior"
                         className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-700 rounded-full p-2 shadow-md transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
                       >
@@ -1380,7 +1424,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        onClick={irImagenSiguiente}
+                        onClick={(e) => { e.stopPropagation(); irImagenSiguiente(); }}
                         aria-label="Foto siguiente"
                         className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-700 rounded-full p-2 shadow-md transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
                       >
@@ -1390,19 +1434,17 @@ export default function App() {
                   )}
                 </div>
 
-                {/* MINIATURAS DE FOTOS GENERALES */}
+                {/* MINIATURAS: fotos generales + foto de cada variante */}
                 {listaImagenes.length > 1 && (
                   <div className="flex items-center gap-3 mt-4 overflow-x-auto max-w-full pb-2">
-                    {listaImagenes.map((img, idx) => (
+                    {galeriaCompleta.map((item, idx) => (
                       <button
                         key={idx}
-                        onClick={() => {
-                          setImagenActivaIndex(idx);
-                          setImagenVarianteDirecta(null);
-                        }}
+                        onClick={() => seleccionarFoto(idx)}
+                        title={item.variante ? [item.variante.medida, item.variante.material, item.variante.color].filter(Boolean).join(' / ') : undefined}
                         className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 ${(!imagenVarianteDirecta && imagenActivaIndex === idx) ? 'border-emerald-700 scale-105 shadow' : 'border-slate-200 opacity-60'}`}
                       >
-                        <img src={img} alt="Miniatura" className="w-full h-full object-cover" />
+                        <img src={item.url} alt="Miniatura" className="w-full h-full object-cover" />
                       </button>
                     ))}
                   </div>
@@ -1527,6 +1569,64 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* LIGHTBOX: foto ampliada a pantalla completa, con zoom y navegación */}
+          {lightboxAbierto && imagenAMostrar && (
+            <div
+              className="fixed inset-0 z-[60] bg-slate-950/95 flex items-center justify-center p-4"
+              onClick={() => { setLightboxAbierto(false); setImagenHoverZoom(false); }}
+            >
+              <button
+                onClick={(e) => { e.stopPropagation(); setLightboxAbierto(false); setImagenHoverZoom(false); }}
+                aria-label="Cerrar"
+                className="absolute top-4 right-4 z-20 bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              {listaImagenes.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); irImagenAnterior(); }}
+                    aria-label="Foto anterior"
+                    className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-3 transition-colors"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); irImagenSiguiente(); }}
+                    aria-label="Foto siguiente"
+                    className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-3 transition-colors"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                </>
+              )}
+
+              <div
+                className="relative w-full h-full max-w-5xl max-h-[85vh] overflow-hidden flex items-center justify-center cursor-zoom-in"
+                onClick={(e) => e.stopPropagation()}
+                onMouseEnter={() => setImagenHoverZoom(true)}
+                onMouseLeave={() => setImagenHoverZoom(false)}
+                onMouseMove={manejarMouseMoveZoom}
+              >
+                <img
+                  src={imagenAMostrar}
+                  alt={productoDetalle.titulo}
+                  className="max-w-full max-h-full object-contain select-none transition-transform duration-150 ease-out"
+                  style={imagenHoverZoom ? { transform: 'scale(2.2)', transformOrigin: `${zoomPos.x}% ${zoomPos.y}%` } : undefined}
+                  draggable={false}
+                />
+              </div>
+
+              {listaImagenes.length > 1 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-xs font-bold">
+                  {imagenActivaIndex + 1} / {listaImagenes.length}
+                </div>
+              )}
+            </div>
+          )}
+          </>
         );
       })()}
 
