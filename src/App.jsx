@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { 
   ShoppingBag, Search, ShoppingCart, X, Plus, Minus, ExternalLink, 
-  MessageCircle, ArrowLeft, Lock, Edit3, Trash2, Tag, Check, Image as ImageIcon, KeyRound, LogOut, Upload, Loader2, Settings, ChevronRight, ChevronLeft
+  MessageCircle, ArrowLeft, Lock, Edit3, Trash2, Tag, Check, Image as ImageIcon, KeyRound, LogOut, Upload, Loader2, Settings, ChevronRight, ChevronLeft, ZoomIn
 } from 'lucide-react';
 
 const CLOUDINARY_CLOUD_NAME = "okej62yk"; 
@@ -10,6 +10,39 @@ const CLOUDINARY_UPLOAD_PRESET = "preset_micasita";
 
 // EMAIL AUTORIZADO PARA ESTA TIENDA
 const EMAIL_AUTORIZADO = "gracielaorsetti@guiaclic.com.ar";
+
+// Arma la galería de fotos de un producto combinando las fotos generales
+// (imagenes[]) con la foto específica de cada variante (imagen_asociada_url),
+// sin duplicar una misma URL dos veces. Cada foto queda etiquetada con la
+// variante a la que pertenece (o null si es una foto general del producto),
+// para poder sincronizar los selectores de medida/material/color al navegar.
+function construirGaleria(prod) {
+  if (!prod) return [];
+  const fotosGenerales = (prod.imagenes && prod.imagenes.length > 0)
+    ? prod.imagenes
+    : (prod.imagen_url ? [prod.imagen_url] : []);
+  const variantes = prod.variantes || [];
+
+  const vistas = new Set();
+  const galeria = [];
+
+  fotosGenerales.forEach((url) => {
+    if (url && !vistas.has(url)) {
+      vistas.add(url);
+      galeria.push({ url, variante: null });
+    }
+  });
+
+  variantes.forEach((v) => {
+    const url = v.imagen_asociada_url;
+    if (url && !vistas.has(url)) {
+      vistas.add(url);
+      galeria.push({ url, variante: v });
+    }
+  });
+
+  return galeria;
+}
 
 export default function App() {
   const [productos, setProductos] = useState([]);
@@ -21,7 +54,9 @@ export default function App() {
   // Modal Detalle de Producto estilo Tiendanube
   const [productoDetalle, setProductoDetalle] = useState(null);
   const [imagenActivaIndex, setImagenActivaIndex] = useState(0);
-  const [imagenVarianteDirecta, setImagenVarianteDirecta] = useState(null);
+  const [lightboxAbierto, setLightboxAbierto] = useState(false);
+  const [imagenHoverZoom, setImagenHoverZoom] = useState(false);
+  const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [medidaSel, setMedidaSel] = useState('');
   const [materialSel, setMaterialSel] = useState('');
   const [colorSel, setColorSel] = useState('');
@@ -290,24 +325,25 @@ export default function App() {
   // Abrir Modal de Detalle de Producto
   const abrirDetalleProducto = (prod) => {
     setProductoDetalle(prod);
-    setImagenActivaIndex(0);
     setCantidadSel(1);
+    setLightboxAbierto(false);
 
     const vars = prod.variantes || [];
+    const galeria = construirGaleria(prod);
+
     if (vars.length > 0) {
       setMedidaSel(vars[0].medida || '');
       setMaterialSel(vars[0].material || '');
       setColorSel(vars[0].color || '');
-      if (vars[0].imagen_asociada_url) {
-        setImagenVarianteDirecta(vars[0].imagen_asociada_url);
-      } else {
-        setImagenVarianteDirecta(null);
-      }
+      const idxInicial = vars[0].imagen_asociada_url
+        ? galeria.findIndex((g) => g.url === vars[0].imagen_asociada_url)
+        : -1;
+      setImagenActivaIndex(idxInicial >= 0 ? idxInicial : 0);
     } else {
       setMedidaSel('');
       setMaterialSel('');
       setColorSel('');
-      setImagenVarianteDirecta(null);
+      setImagenActivaIndex(0);
     }
   };
 
