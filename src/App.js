@@ -285,13 +285,16 @@ export default function App() {
   };
 
   // Calcular variante seleccionada actualmente en el modal
+  // IMPORTANTE: si la combinación elegida no existe como variante real, devolvemos null
+  // en vez de "adivinar" con la primera variante. Ese fallback silencioso era lo que hacía
+  // que distintas selecciones terminaran compartiendo el mismo ID en el carrito.
   const obtenerVarianteSeleccionada = () => {
     if (!productoDetalle || !productoDetalle.variantes || productoDetalle.variantes.length === 0) return null;
     return productoDetalle.variantes.find((v) => 
       (medidaSel === '' || v.medida === medidaSel) &&
       (materialSel === '' || v.material === materialSel) &&
       (colorSel === '' || v.color === colorSel)
-    ) || productoDetalle.variantes[0];
+    ) || null;
   };
 
   const varianteActual = obtenerVarianteSeleccionada();
@@ -320,6 +323,8 @@ export default function App() {
   };
 
   // Calcular precio actual según la variante o producto base
+  const tieneVariantes = (productoDetalle?.variantes || []).length > 0;
+
   const obtenerPrecioActual = () => {
     if (varianteActual) {
       const pOferta = varianteActual.precio_oferta ? Number(varianteActual.precio_oferta) : null;
@@ -328,6 +333,17 @@ export default function App() {
         precio: pOferta || pNormal,
         precioOriginal: pOferta ? pNormal : null,
         stock: varianteActual.stock ?? 0
+      };
+    }
+    // El producto tiene variantes pero la combinación elegida no existe: no inventamos
+    // precio ni stock de otra variante, bloqueamos la compra hasta que elija una combinación válida.
+    if (tieneVariantes) {
+      const pOferta = productoDetalle?.precio_oferta ? Number(productoDetalle.precio_oferta) : null;
+      const pNormal = Number(productoDetalle?.precio || 0);
+      return {
+        precio: pOferta || pNormal,
+        precioOriginal: pOferta ? pNormal : null,
+        stock: 0
       };
     }
     const pOferta = productoDetalle?.precio_oferta ? Number(productoDetalle.precio_oferta) : null;
@@ -341,16 +357,24 @@ export default function App() {
 
   const agregarAlCarritoDesdeDetalle = () => {
     if (!productoDetalle) return;
+
+    // Si el producto tiene variantes pero la combinación elegida no corresponde a
+    // ninguna variante real, no dejamos agregar (antes esto se "resolvía" agregando
+    // silenciosamente la primera variante, que es lo que mezclaba todo en el carrito).
+    if (tieneVariantes && !varianteActual) {
+      alert('Esa combinación no está disponible. Elegí otra opción.');
+      return;
+    }
+
     const infoPrecio = obtenerPrecioActual();
 
     const imgFinal = imagenVarianteDirecta || 
       (productoDetalle.imagenes && productoDetalle.imagenes[0]) || 
       productoDetalle.imagen_url || '';
 
-    // Generación de ID único compuesto estricto (ID Producto + ID Variante o Atributos)
-    const varianteKey = varianteActual?.id 
-      ? varianteActual.id 
-      : `${medidaSel || 'nomedida'}-${materialSel || 'nomat'}-${colorSel || 'nocolor'}`;
+    // Generación de ID único: siempre el ID real de la variante encontrada (o "base" si el
+    // producto no tiene variantes). Ya no depende de un fallback adivinado.
+    const varianteKey = varianteActual ? varianteActual.id : 'base';
 
     const itemCarrito = {
       id: `${productoDetalle.id}_${varianteKey}`,
@@ -617,7 +641,9 @@ export default function App() {
                 <ShoppingCart className="w-5 h-5" />
                 <span className="text-xs font-bold hidden sm:inline uppercase tracking-wider">Carrito</span>
                 {totalItems > 0 && (
-                  <span className="bg-rose-500 text-white text-xs font-black w-5 h-5 rounded-full flex items-center justify-center">
+                  <span className={`bg-rose-500 text-white text-xs font-black w-5 h-5 rounded-full flex items-center justify-center transition-transform duration-300 ${
+                    animarCarrito ? 'scale-150' : 'scale-100'
+                  }`}>
                     {totalItems}
                   </span>
                 )}
@@ -1312,6 +1338,12 @@ export default function App() {
                   </div>
                 </div>
 
+                {tieneVariantes && !varianteActual && (
+                  <p className="text-[11px] font-bold text-rose-600 text-center -mt-2">
+                    Esa combinación no está disponible. Probá con otra opción.
+                  </p>
+                )}
+
                 {/* BOTÓN AGREGAR AL CARRITO */}
                 <button
                   onClick={agregarAlCarritoDesdeDetalle}
@@ -1319,7 +1351,9 @@ export default function App() {
                   className="w-full py-4 bg-emerald-800 hover:bg-emerald-900 text-white rounded-2xl font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ShoppingCart className="w-4 h-4" /> 
-                  {infoPrecio.stock > 0 ? 'Agregar al Carrito' : 'Sin Stock'}
+                  {tieneVariantes && !varianteActual
+                    ? 'Elegí una combinación'
+                    : infoPrecio.stock > 0 ? 'Agregar al Carrito' : 'Sin Stock'}
                 </button>
               </div>
             </div>
