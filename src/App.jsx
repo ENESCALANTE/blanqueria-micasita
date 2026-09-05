@@ -21,6 +21,7 @@ export default function App() {
   // Modal Detalle de Producto estilo Tiendanube
   const [productoDetalle, setProductoDetalle] = useState(null);
   const [imagenActivaIndex, setImagenActivaIndex] = useState(0);
+  const [imagenVarianteDirecta, setImagenVarianteDirecta] = useState(null);
   const [medidaSel, setMedidaSel] = useState('');
   const [materialSel, setMaterialSel] = useState('');
   const [colorSel, setColorSel] = useState('');
@@ -50,13 +51,14 @@ export default function App() {
   // Formulario Producto Admin
   const [productoEditar, setProductoEditar] = useState(null);
   const [subiendoImagen, setSubiendoImagen] = useState(false);
+  const [subiendoImagenVarIdx, setSubiendoImagenVarIdx] = useState(null);
   const [formProd, setFormProd] = useState({
     titulo: '',
     categoria: '',
     descripcion: '',
     precio: '',
     precio_oferta: '',
-    imagenes: [] // array de URLs
+    imagenes: []
   });
 
   // Estado para variantes en el form admin
@@ -136,6 +138,7 @@ export default function App() {
 
     try {
       if (esLogo) setSubiendoLogo(true);
+      else if (esVarianteIndex !== null) setSubiendoImagenVarIdx(esVarianteIndex);
       else setSubiendoImagen(true);
 
       const urlsSubidas = [];
@@ -176,6 +179,7 @@ export default function App() {
       alert('Error al subir la imagen: ' + error.message);
     } finally {
       if (esLogo) setSubiendoLogo(false);
+      else if (esVarianteIndex !== null) setSubiendoImagenVarIdx(null);
       else setSubiendoImagen(false);
     }
   };
@@ -258,10 +262,16 @@ export default function App() {
       setMedidaSel(vars[0].medida || '');
       setMaterialSel(vars[0].material || '');
       setColorSel(vars[0].color || '');
+      if (vars[0].imagen_asociada_url) {
+        setImagenVarianteDirecta(vars[0].imagen_asociada_url);
+      } else {
+        setImagenVarianteDirecta(null);
+      }
     } else {
       setMedidaSel('');
       setMaterialSel('');
       setColorSel('');
+      setImagenVarianteDirecta(null);
     }
   };
 
@@ -276,6 +286,29 @@ export default function App() {
   };
 
   const varianteActual = obtenerVarianteSeleccionada();
+
+  // Actualizar imagen automáticamente al cambiar variantes
+  const handleCambioVariante = (tipo, valor) => {
+    let m = medidaSel;
+    let mat = materialSel;
+    let c = colorSel;
+
+    if (tipo === 'medida') { setMedidaSel(valor); m = valor; }
+    if (tipo === 'material') { setMaterialSel(valor); mat = valor; }
+    if (tipo === 'color') { setColorSel(valor); c = valor; }
+
+    const encontrada = (productoDetalle?.variantes || []).find((v) =>
+      (m === '' || v.medida === m) &&
+      (mat === '' || v.material === mat) &&
+      (c === '' || v.color === c)
+    );
+
+    if (encontrada && encontrada.imagen_asociada_url) {
+      setImagenVarianteDirecta(encontrada.imagen_asociada_url);
+    } else {
+      setImagenVarianteDirecta(null);
+    }
+  };
 
   // Calcular precio actual según la variante o producto base
   const obtenerPrecioActual = () => {
@@ -301,6 +334,10 @@ export default function App() {
     if (!productoDetalle) return;
     const infoPrecio = obtenerPrecioActual();
 
+    const imgFinal = imagenVarianteDirecta || 
+      (productoDetalle.imagenes && productoDetalle.imagenes[0]) || 
+      productoDetalle.imagen_url || '';
+
     const itemCarrito = {
       id: `${productoDetalle.id}-${varianteActual?.id || 'base'}`,
       producto_id: productoDetalle.id,
@@ -311,7 +348,7 @@ export default function App() {
       color: colorSel,
       precioEfectivo: infoPrecio.precio,
       cantidad: cantidadSel,
-      imagen: (productoDetalle.imagenes && productoDetalle.imagenes[0]) || productoDetalle.imagen_url || ''
+      imagen: imgFinal
     };
 
     setCarrito((prev) => {
@@ -411,7 +448,7 @@ export default function App() {
         prodId = data.id;
       }
 
-      // Insertar Variantes
+      // Insertar Variantes con su foto correspondiente
       if (formVariantes.length > 0 && prodId) {
         const variantesPayload = formVariantes.map((v) => ({
           producto_id: prodId,
@@ -421,7 +458,7 @@ export default function App() {
           stock: Number(v.stock) || 0,
           precio: v.precio ? Number(v.precio) : null,
           precio_oferta: v.precio_oferta ? Number(v.precio_oferta) : null,
-          imagen_asociada_url: v.imagen_asociada_url
+          imagen_asociada_url: v.imagen_asociada_url || null
         }));
 
         const { error: errVar } = await supabase
@@ -753,11 +790,11 @@ export default function App() {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Imágenes del Producto (Múltiples fotos)</label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Imágenes General del Producto (Múltiples fotos)</label>
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="cursor-pointer bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold py-2.5 px-4 rounded-lg flex items-center gap-2 shadow transition-colors">
                       {subiendoImagen ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      {subiendoImagen ? 'Subiendo fotos...' : '📷 Agregar Fotos'}
+                      {subiendoImagen ? 'Subiendo fotos...' : '📷 Agregar Fotos General'}
                       <input 
                         type="file" 
                         multiple 
@@ -795,11 +832,11 @@ export default function App() {
                 </div>
               </div>
 
-              {/* GESTIÓN DE VARIANTES (Talles/Medidas, Material, Color, Stock) */}
+              {/* GESTIÓN DE VARIANTES CON FOTO ESPECÍFICA */}
               <div className="border-t border-amber-200 pt-4 space-y-3">
                 <div className="flex justify-between items-center">
                   <h5 className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                    Variantes de Producto (Medida / Material / Color / Stock)
+                    Variantes de Producto (Medida / Material / Color / Stock / Foto Específica)
                   </h5>
                   <button
                     type="button"
@@ -811,12 +848,12 @@ export default function App() {
                 </div>
 
                 {formVariantes.map((v, idx) => (
-                  <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-6 gap-2 items-center">
+                  <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-7 gap-2 items-center">
                     <div>
                       <span className="text-[10px] font-bold text-slate-500 block">Medida/Talle</span>
                       <input
                         type="text"
-                        placeholder="2 1/2 plazas"
+                        placeholder="2 1/2"
                         value={v.medida}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -830,7 +867,7 @@ export default function App() {
                       <span className="text-[10px] font-bold text-slate-500 block">Material</span>
                       <input
                         type="text"
-                        placeholder="100% Algodón"
+                        placeholder="Algodon"
                         value={v.material}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -855,7 +892,7 @@ export default function App() {
                     </div>
 
                     <div>
-                      <span className="text-[10px] font-bold text-slate-500 block">Stock Disponible</span>
+                      <span className="text-[10px] font-bold text-slate-500 block">Stock</span>
                       <input
                         type="number"
                         placeholder="10"
@@ -869,7 +906,7 @@ export default function App() {
                     </div>
 
                     <div>
-                      <span className="text-[10px] font-bold text-slate-500 block">Precio Variante (Opcional)</span>
+                      <span className="text-[10px] font-bold text-slate-500 block">Precio Variante</span>
                       <input
                         type="number"
                         placeholder="Si difiere"
@@ -882,7 +919,36 @@ export default function App() {
                       />
                     </div>
 
-                    <div className="flex items-center gap-2 pt-3 sm:pt-0">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block">Foto de la Variante</span>
+                      <div className="flex items-center gap-1.5">
+                        <label className="cursor-pointer bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-bold py-1.5 px-2 rounded flex items-center gap-1">
+                          {subiendoImagenVarIdx === idx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                          {v.imagen_asociada_url ? 'Cambiar' : 'Foto'}
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={(e) => handleSubirImagen(e, false, idx)} 
+                            disabled={subiendoImagenVarIdx === idx} 
+                            className="hidden" 
+                          />
+                        </label>
+                        {v.imagen_asociada_url && (
+                          <div className="relative group w-7 h-7 border rounded overflow-hidden">
+                            <img src={v.imagen_asociada_url} alt="Var" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => setFormVariantes(prev => prev.map((item, i) => i === idx ? { ...item, imagen_asociada_url: '' } : item))}
+                              className="absolute inset-0 bg-red-600/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-3 sm:pt-0 justify-end">
                       {formVariantes.length > 1 && (
                         <button
                           type="button"
@@ -901,7 +967,7 @@ export default function App() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
-                  disabled={subiendoImagen}
+                  disabled={subiendoImagen || subiendoImagenVarIdx !== null}
                   className="bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow disabled:opacity-50"
                 >
                   <Check className="w-4 h-4" /> {productoEditar ? 'Guardar Cambios' : 'Publicar Producto'}
@@ -1093,6 +1159,8 @@ export default function App() {
           ? productoDetalle.imagenes
           : (productoDetalle.imagen_url ? [productoDetalle.imagen_url] : []);
 
+        const imagenAMostrar = imagenVarianteDirecta || listaImagenes[imagenActivaIndex] || listaImagenes[0];
+
         const variantes = productoDetalle.variantes || [];
         const medidasDisponibles = [...new Set(variantes.map(v => v.medida).filter(Boolean))];
         const materialesDisponibles = [...new Set(variantes.map(v => v.material).filter(Boolean))];
@@ -1111,9 +1179,9 @@ export default function App() {
               {/* GALERÍA DE FOTOS */}
               <div className="w-full md:w-1/2 p-6 bg-slate-50 flex flex-col items-center justify-between border-b md:border-b-0 md:border-r border-slate-200">
                 <div className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden bg-white shadow-inner relative flex items-center justify-center">
-                  {listaImagenes.length > 0 ? (
+                  {imagenAMostrar ? (
                     <img 
-                      src={listaImagenes[imagenActivaIndex] || listaImagenes[0]} 
+                      src={imagenAMostrar} 
                       alt={productoDetalle.titulo} 
                       className="w-full h-full object-contain"
                     />
@@ -1122,14 +1190,17 @@ export default function App() {
                   )}
                 </div>
 
-                {/* MINIATURAS DE FOTOS */}
+                {/* MINIATURAS DE FOTOS GENERALES */}
                 {listaImagenes.length > 1 && (
                   <div className="flex items-center gap-3 mt-4 overflow-x-auto max-w-full pb-2">
                     {listaImagenes.map((img, idx) => (
                       <button
                         key={idx}
-                        onClick={() => setImagenActivaIndex(idx)}
-                        className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 ${imagenActivaIndex === idx ? 'border-emerald-700 scale-105 shadow' : 'border-slate-200 opacity-60'}`}
+                        onClick={() => {
+                          setImagenActivaIndex(idx);
+                          setImagenVarianteDirecta(null);
+                        }}
+                        className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 ${(!imagenVarianteDirecta && imagenActivaIndex === idx) ? 'border-emerald-700 scale-105 shadow' : 'border-slate-200 opacity-60'}`}
                       >
                         <img src={img} alt="Miniatura" className="w-full h-full object-cover" />
                       </button>
@@ -1166,7 +1237,7 @@ export default function App() {
                         <label className="text-xs font-bold text-slate-700 block mb-1">Medida / Talle:</label>
                         <select
                           value={medidaSel}
-                          onChange={(e) => setMedidaSel(e.target.value)}
+                          onChange={(e) => handleCambioVariante('medida', e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500"
                         >
                           {medidasDisponibles.map((m) => (
@@ -1181,7 +1252,7 @@ export default function App() {
                         <label className="text-xs font-bold text-slate-700 block mb-1">Material:</label>
                         <select
                           value={materialSel}
-                          onChange={(e) => setMaterialSel(e.target.value)}
+                          onChange={(e) => handleCambioVariante('material', e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500"
                         >
                           {materialesDisponibles.map((mat) => (
@@ -1196,7 +1267,7 @@ export default function App() {
                         <label className="text-xs font-bold text-slate-700 block mb-1">Color:</label>
                         <select
                           value={colorSel}
-                          onChange={(e) => setColorSel(e.target.value)}
+                          onChange={(e) => handleCambioVariante('color', e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500"
                         >
                           {coloresDisponibles.map((col) => (
